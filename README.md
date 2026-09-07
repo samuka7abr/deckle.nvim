@@ -48,6 +48,7 @@ funcionando.
 ## Documentação
 
 - [Arquitetura](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)
 - [Validação empírica](docs/validation.md)
 - Decisões (ADR):
   - [0001 — `mlua` em vez de `nvim-oxi`](docs/adr/0001-mlua-sobre-nvim-oxi.md)
