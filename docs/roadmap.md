@@ -20,7 +20,7 @@ Nenhuma delas está em ADR ainda. Estão aqui para serem contestadas antes de vi
 
 | Decisão | Escolha | Por quê |
 |---|---|---|
-| Piso de Neovim | **0.11.0** | é a única versão medida (V1, V2, V3). 0.10 entra na matriz de CI como job permissivo, e o piso desce se passar |
+| Piso de Neovim | **0.11.0** | é a única versão medida (V1, V2, V3). O 0.10 foi à CI como job permissivo e reprovou; o piso fica onde está |
 | Framework de teste | **mini.test** | roda em `nvim --headless`, é Lua puro, não precisa de luarocks nem busted (nenhum dos dois está instalado). Dependência só de desenvolvimento |
 | Formatação | **stylua** | já existe na máquina via mason |
 | Lint | **selene** em vez de luacheck | selene tem binário estático, luacheck arrasta luarocks |
@@ -374,7 +374,11 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
 
 ## Decisões ainda em aberto
 
-- **Piso de Neovim.** Proposto 0.11.0 na fase 0. Vira ADR na fase 10, com dado da CI.
+- **Piso de Neovim.** ~~Proposto~~ **medido na CI da fase 0**: o Neovim 0.10.4 reprova 20
+  dos 39 casos. A causa não é bug — é `vim.validate` com a assinatura nova, que só existe a
+  partir do 0.11, mais a guarda do `plugin/deckle.lua`, que se recusa a registrar `:Deckle`
+  abaixo do piso e faz todo teste de despacho bater em `E492`. O job saiu da matriz em vez
+  de ficar permanentemente vermelho. Fica em **0.11.0**; vira ADR na fase 10.
 - **macOS e Windows.** Nada foi testado. A fase 8 é a primeira que descobre.
 - **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. Reconferir
   na fase 6.
