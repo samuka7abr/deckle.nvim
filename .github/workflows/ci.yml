@@ -1,0 +1,56 @@
+# CI do deckle.nvim: formatação, lint e testes.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    name: format (stylua)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: latest
+          args: --check lua/ plugin/ tests/ scripts/run.lua
+
+  lint:
+    name: lint (selene)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Binário estático, não `cargo install`: instala em segundos em vez de minutos.
+      # A tag é fixa de propósito — `latest/download` com nome de arquivo versionado
+      # quebra silenciosamente no dia em que sair a 0.32.
+      - name: Baixar binário estático do selene
+        env:
+          SELENE_VERSION: 0.31.0
+        run: |
+          curl -fsSLo selene.zip \
+            "https://github.com/Kampfkarren/selene/releases/download/${SELENE_VERSION}/selene-${SELENE_VERSION}-linux.zip"
+          unzip selene.zip -d selene-bin
+          chmod +x selene-bin/selene
+          echo "$PWD/selene-bin" >> "$GITHUB_PATH"
+      - run: selene lua/ plugin/ tests/ scripts/run.lua
+
+  test:
+    name: test (nvim ${{ matrix.nvim-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # O 0.10.4 esteve aqui como job permissivo e saiu na fase 0: reprovou 20 dos 39
+        # casos, e a causa é o piso de versão, não bug. Ver "Decisões ainda em aberto"
+        # em docs/roadmap.md.
+        nvim-version: [v0.11.0, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim-version }}
+      - run: ./scripts/test.sh

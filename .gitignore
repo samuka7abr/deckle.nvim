@@ -4,3 +4,4 @@ target/
 *.dll
 Cargo.lock
 doc/tags
+.deps/
