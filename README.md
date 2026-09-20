@@ -8,8 +8,22 @@ Sem browser, sem servidor web, sem webview.
 
 ## Estado
 
-Fase de desenho. Nada implementado ainda. A arquitetura foi validada empiricamente —
-ver [`docs/validation.md`](docs/validation.md) para o que foi medido e o que ainda é suposição.
+**Fase 0 do [roadmap](docs/roadmap.md): fundação.** Existe o esqueleto — `:Deckle` com
+subcomandos, configuração validada, `:checkhealth deckle`, suíte de testes e CI. Ainda não
+existe render: `:Deckle open` avisa que o preview chega na fase 2.
+
+A arquitetura foi validada empiricamente — ver [`docs/validation.md`](docs/validation.md)
+para o que foi medido e o que ainda é suposição.
+
+### Desenvolvimento
+
+```sh
+./scripts/test.sh                        # suíte inteira
+./scripts/test.sh tests/test_config.lua  # um arquivo só
+```
+
+A primeira execução baixa o [mini.test](https://github.com/echasnovski/mini.nvim) em
+`.deps/`. Formatação com `stylua`, lint com `selene`.
 
 ## Como funciona
 
