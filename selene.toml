@@ -1,0 +1,4 @@
+# Configuração do selene para o deckle.nvim.
+# O plugin roda em LuaJIT/Lua 5.1 dentro do Neovim, então estendemos a std
+# padrão do Lua 5.1 com a API do Neovim (definida em vim.yml).
+std = "vim"

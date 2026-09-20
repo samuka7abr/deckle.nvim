@@ -1,0 +1,23 @@
+# Standard library do selene para o ambiente Neovim.
+#
+# Formato YAML (`vim.yml`), que é o que o selene 0.31 parseia quando o `selene.toml`
+# pede `std = "vim"`. Um arquivo `.toml` seria parseado como TOML de verdade e quebra.
+#
+# `base: lua51` herda a std do Lua 5.1, que é o que o LuaJIT do Neovim implementa.
+#
+# Não enumeramos cada função de `vim.api.*` / `vim.fn.*`: a superfície é enorme e o
+# objetivo do lint aqui não é validar a API do Neovim, e sim pegar erro de verdade —
+# variável não usada, shadowing, global acidental.
+base: lua51
+
+globals:
+  vim:
+    any: true
+  # Injetado pelo mini.test dentro dos arquivos de teste.
+  MiniTest:
+    any: true
+  # A std do Lua 5.1 no selene não modela os handles de `io` como struct, então
+  # `io.stderr:write(...)` — válido em LuaJIT — vira erro. É lacuna do selene, não
+  # do nosso código.
+  io.stderr:
+    any: true
