@@ -99,15 +99,16 @@ jobs:
             lib: libdeckle_native.so
             ext: so
             smoke: true
-          # O runner macos-13 (x86_64) foi aposentado pelo GitHub; o macos-15-intel é o
-          # runner x86_64 que o substituiu.
+          # Os runners macos-13 (x86_64) e macos-14 (arm64) saíram do ar ("The configuration
+          # 'macos-14-arm64-us-default' is not supported"). macos-15-intel é o x86_64 e
+          # macos-15 é o arm64.
           - target: x86_64-apple-darwin
             os: macos-15-intel
             lib: libdeckle_native.dylib
             ext: dylib
             smoke: true
           - target: aarch64-apple-darwin
-            os: macos-14
+            os: macos-15
             lib: libdeckle_native.dylib
             ext: dylib
             smoke: true
