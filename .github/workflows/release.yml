@@ -1,0 +1,240 @@
+# Release do deckle.nvim: compila o módulo nativo (camada 1) para linux, macos e windows em
+# x86_64 e aarch64, e publica os artefatos que `lua/deckle/install.lua` baixa.
+#
+# Gatilhos:
+#   push de tag `v*`    compila, testa o artefato e publica a GitHub Release
+#   workflow_dispatch   compila e testa; só sobe os artefatos do workflow, não publica nada
+#   pull_request        o mesmo que o dispatch, só quando algo que entra no binário muda. Existe
+#                       porque um workflow novo só aparece para `workflow_dispatch` depois de
+#                       entrar na branch padrão; sem isto a matriz só poderia ser provada
+#                       depois do merge. É também o que pega um `Cargo.lock` ou uma flag de
+#                       link quebrados antes de a tag existir.
+#
+# Cada artefato é `deckle_native-<target>.<so|dylib|dll>` mais `<mesmo nome>.sha256`, no
+# formato do `sha256sum`. O instalador depende desses nomes: mudar um é mudar o outro.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".cargo/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "rust-toolchain.toml"
+      - "tests/native/**"
+      - "lua/deckle/install.lua"
+      - "lua/deckle/sha256.lua"
+      - "lua/deckle/version.lua"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Numa PR, um push novo substitui a rodada velha. Numa tag, nunca cancela uma release.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: verify (tag, merman)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # `lua/deckle/version.lua` é a versão que o instalador usa para montar a URL da release.
+      # Uma tag que não bate publicaria binários que ninguém consegue baixar. `v0.2.0-rc`
+      # vale para a versão `0.2.0`: o sufixo é para testar a matriz, não é outra versão.
+      - name: A tag bate com lua/deckle/version.lua
+        run: |
+          version="$(sed -n 's/^return "\(.*\)"$/\1/p' lua/deckle/version.lua)"
+          if [[ -z "${version}" ]]; then
+            echo "::error::nao consegui ler a versao de lua/deckle/version.lua"
+            exit 1
+          fi
+          echo "versao do plugin: ${version}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [[ "${tag%%-*}" != "${version}" ]]; then
+              echo "::error::a tag ${GITHUB_REF_NAME} nao bate com lua/deckle/version.lua (${version})"
+              exit 1
+            fi
+          fi
+
+      - name: Instalar a toolchain do rust-toolchain.toml
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "${channel}"
+          rustup toolchain install "${channel}" --profile minimal
+      - name: versao do merman
+        run: ./scripts/check-merman-version.sh
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # `lib` é o nome que o cargo gera; `ext` é a extensão do arquivo da release. `smoke`
+        # roda o artefato dentro de um Neovim, e só dá para fazer onde o runner executa o
+        # binário que compilou. O aarch64 do Windows é cross-compilado num runner x64, que
+        # não executa aarch64: sai sem smoke test.
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+            lib: libdeckle_native.so
+            ext: so
+            smoke: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            lib: libdeckle_native.so
+            ext: so
+            smoke: true
+          # O runner macos-13 (x86_64) foi aposentado pelo GitHub; o macos-15-intel é o
+          # runner x86_64 que o substituiu.
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            lib: libdeckle_native.dylib
+            ext: dylib
+            smoke: true
+          - target: aarch64-apple-darwin
+            os: macos-14
+            lib: libdeckle_native.dylib
+            ext: dylib
+            smoke: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            lib: deckle_native.dll
+            ext: dll
+            smoke: true
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            lib: deckle_native.dll
+            ext: dll
+            smoke: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar a toolchain do rust-toolchain.toml, com o alvo
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "${channel}"
+          rustup toolchain install "${channel}" --profile minimal --target "${TARGET}"
+          rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # `--locked`: o Cargo.lock versionado é o que mantém o merman na versão pinada (V5).
+      # As flags de link do macOS vêm de .cargo/config.toml, que casa com `--target`.
+      - name: Compilar
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked -p deckle-native --target "${TARGET}"
+
+      - name: Empacotar o artefato e o checksum
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          LIB: ${{ matrix.lib }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          asset="deckle_native-${TARGET}.${EXT}"
+          src="target/${TARGET}/release/${LIB}"
+          if [[ ! -f "${src}" ]]; then
+            echo "::error::${src} nao foi gerado"
+            ls -la "target/${TARGET}/release" || true
+            exit 1
+          fi
+          mkdir -p dist
+          cp "${src}" "dist/${asset}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            hash="$(sha256sum "dist/${asset}" | cut -d' ' -f1)"
+          else
+            hash="$(shasum -a 256 "dist/${asset}" | cut -d' ' -f1)"
+          fi
+          # Formato do sha256sum (`<hash>  <arquivo>`), sem o `*` que o sha256sum do Windows
+          # poe na frente do nome. O instalador só lê o primeiro token.
+          printf '%s  %s\n' "${hash}" "${asset}" > "dist/${asset}.sha256"
+          ls -la dist
+          cat "dist/${asset}.sha256"
+
+      # Sobe antes do smoke test: se o módulo não carregar, o artefato continua disponível
+      # para inspeção, mas o job fica vermelho e o job `release` não roda.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deckle_native-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Instalar o Neovim para o smoke test
+        if: matrix.smoke
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: v0.11.0
+
+      # O instalador de verdade baixa o artefato de um diretório local (`file://`), confere o
+      # SHA-256, instala, carrega o módulo e roda a bateria de `native_headless.lua`. É a prova
+      # de que o `.dylib` do macOS e a `.dll` do Windows carregam num Neovim.
+      - name: Smoke test do artefato (instalador, carga, bateria nativa)
+        if: matrix.smoke
+        shell: bash
+        run: |
+          ws="${GITHUB_WORKSPACE//\\//}"
+          status=0
+          nvim --headless -u NONE --cmd "set rtp^=${ws}" \
+            -l tests/native/install_smoke.lua "${ws}/dist" || status=$?
+          if [[ "${status}" -eq 134 ]]; then
+            echo "::error::o nvim ABORTOU (SIGABRT, 134): o modulo derrubou o processo"
+          fi
+          exit "${status}"
+
+  release:
+    name: publicar a release
+    # Só em tag. Em `workflow_dispatch` e em PR os artefatos ficam no workflow e mais nada.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [verify, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: deckle_native-*
+          merge-multiple: true
+
+      # 12 = 6 alvos da matriz acima x (binário + .sha256). Mudar a matriz muda este número.
+      - name: Conferir a contagem e os checksums
+        working-directory: dist
+        run: |
+          ls -la
+          count="$(find . -maxdepth 1 -type f | wc -l)"
+          if [[ "${count}" -ne 12 ]]; then
+            echo "::error::esperava 12 arquivos (6 alvos x binario e .sha256), achei ${count}"
+            exit 1
+          fi
+          sha256sum -c ./*.sha256
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          # Tag com sufixo (`v0.2.0-rc`) é pré-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
