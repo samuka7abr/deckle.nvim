@@ -380,6 +380,7 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
   abaixo do piso e faz todo teste de despacho bater em `E492`. O job saiu da matriz em vez
   de ficar permanentemente vermelho. Fica em **0.11.0**; vira ADR na fase 10.
 - **macOS e Windows.** Nada foi testado. A fase 8 é a primeira que descobre.
-- **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. Reconferir
-  na fase 6.
+- **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. ~~Reconferir
+  na fase 6.~~ **Reconferido na fase 6 (2026-11-17)**: o pin fica, mas já existem `0.8.0` e
+  `0.10.0` na crates.io. Subir é um PR próprio; ver ADR-0002.
 - **Sobrevivência da camada 2.** Decidir depois da v0.2.0, com uso real na mão.

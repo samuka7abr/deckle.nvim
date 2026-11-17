@@ -83,25 +83,55 @@ Uma chamada por diagrama. Sem conversas de ida e volta.
 
 ```lua
 -- Lua
-local ok, out = pcall(native.render, src, {
-  width      = 80,        -- largura útil da janela de preview
-  charset    = "unicode", -- "unicode" | "ascii"
-  diagram_ty = "flowchart", -- do info string da code fence; evita o passo de detecção
+local native = require("deckle_native")   -- lua/deckle_native.so, via `make native`
+
+local ok, lines = pcall(native.render, src, {
+  width         = 80,          -- meta de largura em células (default 80), não é corte
+  charset       = "unicode",   -- "unicode" (default) | "ascii"
+  diagram_ty    = "flowchart", -- opcional: id de tipo do Mermaid já conhecido; pula a detecção
+  max_src_lines = 200,         -- opcional (default 200): acima disso é erro, não render
 })
--- ok == false  → mensagem de erro legível, bloco degrada para código cru
--- ok == true   → out.lines : string[]
+-- ok == false → `lines` é uma string de uma linha com o motivo; o bloco degrada para código cru
+-- ok == true  → `lines` é string[] (sem "\n"), pronta para nvim_buf_set_lines
+
+native.supported_types()  -- string[]: os 14 tipos do renderer de texto, lidos do merman
+native.version()          -- string: versão do crate deckle-native
 ```
 
 ```rust
-// Rust — assinatura equivalente
-#[mlua::lua_module]
-fn deckle_native(lua: &Lua) -> LuaResult<Table>;
+// Rust — a lógica pura não conhece Lua (crates/deckle-native/src/render.rs)
+pub fn render(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError>;
+pub fn supported_types() -> Vec<String>;
 
-fn render(_: &Lua, (src, opts): (String, RenderOpts)) -> LuaResult<Vec<String>>;
+// a camada mlua é fina (src/binding.rs)
+#[mlua::lua_module]
+fn deckle_native(lua: &Lua) -> LuaResult<LuaTable>;
 ```
 
 Contrato de erro: **sempre `Err`, nunca `panic!` deliberado**. O mlua converte os dois em
-erro de Lua capturável (validado), mas `Err` produz mensagem útil e `panic!` não.
+erro de Lua capturável (validado), mas `Err` produz mensagem útil e `panic!` não. Um
+`catch_unwind` em volta do render converte qualquer panic do merman em `Err`.
+
+O valor que o `pcall` devolve em caso de erro é uma **string** pura (`error(msg, 0)`): se o
+`Err` fosse entregue direto pelo mlua, o Lua receberia um userdata cujo `tostring` traz um
+`stack traceback`. Por isso a função nativa devolve `(nil, msg)` e um wrapper Lua faz o `error`.
+
+Erros que o módulo produz, todos em inglês e em uma linha:
+
+| prefixo da mensagem | causa |
+|---|---|
+| `invalid option:` | `opts` ou `src` com tipo errado, `width < 1`, `charset` desconhecido |
+| `empty mermaid source` | fonte vazia ou só com espaços |
+| `mermaid source too large:` | mais de `max_src_lines` linhas (a guarda corre antes do layout) |
+| `mermaid parse error:` | sintaxe inválida, tipo não detectado ou `diagram_ty` desconhecido |
+| `unsupported diagram:` | diagrama válido que o renderer de texto não cobre (`pie`, `c4`...) |
+| `mermaid render failed:` | limite de recursos do merman, ou diagrama que não desenha nada |
+| `internal error (panic caught):` | panic capturado; não deveria acontecer |
+
+`width` é uma meta, não um corte: o merman nunca trunca (perderia dado). Se o layout padrão
+passa dela, o crate tenta o perfil compacto (só flowchart e sequence o aceitam) e devolve o
+mais estreito. Se ainda assim sobrar linha larga, ela vem inteira, e decidir o que fazer
+com ela é da camada Lua.
 
 ## 6. Camadas de degradação
 
@@ -194,4 +224,8 @@ Honestidade sobre os limites da validação:
 - **A sincronia de scroll não tem protótipo.** É a parte de maior risco não validada.
 - **O comportamento de `merman` sob entrada malformada não foi explorado a fundo** —
   testei o caminho feliz e o tipo não suportado, não fuzzing.
-- **Cobertura real de cada um dos 14 tipos de diagrama não foi auditada.** Testei 4.
+- **Cobertura real de cada um dos 14 tipos de diagrama foi auditada só no nível mínimo.**
+  A fase 6 renderiza um diagrama mínimo de cada tipo (`cargo test`), o que prova que não
+  quebra, não que o desenho está bom. Oito dos 14 saem como texto estruturado
+  (`gantt`, `gitgraph`, `journey`, `kanban`, `mindmap`, `packet`, `timeline`, `treeView`),
+  não como desenho: é a projeção primária deles no merman.

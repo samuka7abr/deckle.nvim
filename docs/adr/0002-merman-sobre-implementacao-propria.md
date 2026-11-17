@@ -61,3 +61,32 @@ Isso remove a parte mais difícil do projeto e o reduz a: renderizador de Markdo
 - Ficamos dependentes de um projeto de terceiros para a feature central. É a troca
   consciente: entregar em semanas com bugs cosméticos alheios em vez de em meses com
   bugs próprios.
+
+## Versão escolhida (fase 6, reconferida em 2026-11-17)
+
+**`merman-core` e `merman-ascii` em `=0.8.0-alpha.6`.** É a versão em que V5 foi medido, e
+tudo o que a fase 6 prova (os 14 tipos, o benchmark) vale para ela.
+
+A reconferência na crates.io mostrou que o merman andou desde a validação: já existem
+`0.8.0` e `0.10.0` (sem sufixo alpha; a `0.10.0` declara MSRV 1.95). Não subimos nesta fase
+por duas razões: a API quebra entre versões, então subir exige reler `render_model_report` e
+revalidar tipo por tipo; e a fase 6 é "isolar o crate", não "atualizar o merman". Subir
+vira PR próprio, que reroda `cargo test` (os 14 tipos), o benchmark e atualiza este ADR.
+
+O pin vive em quatro lugares que andam juntos: `crates/deckle-native/Cargo.toml`,
+`scripts/check-merman-version.sh`, este ADR e o `CLAUDE.md`. A CI roda o script, que lê o
+que o cargo **resolveu** (não o que o `Cargo.toml` pede) e falha se for diferente.
+
+Decisões de uso da API que a fase 6 tomou, para o próximo que for subir a versão:
+
+- Entra por `Engine::parse_diagram_for_render_model_sync` (ou `..._with_type_sync` quando o
+  chamador informa `diagram_ty`) e `AsciiRenderer::render_model_report`. O `README` do
+  `merman-ascii` recomenda a fachada `merman` com a feature `ascii`; ficamos nos dois crates
+  separados porque o roadmap pina os dois.
+- `OverflowPolicy::Fallback` **não é usado**. Medido: um xychart de duas barras, com
+  largura 120, saiu como um dump `model.plots[0].data[0][0]: "a"`, em vez do gráfico. O
+  README do `merman-ascii` diz que o fallback do flowchart é uma projeção JSON tipada.
+  Usamos `Allow` e, se estourar, tentamos o perfil `Compact` (que só flowchart e sequence
+  aceitam). Se ainda passar, a linha larga é devolvida inteira: o merman nunca trunca.
+- Contexto de operação determinístico (`RuntimePolicy::deterministic`), com relógio fixo:
+  diagramas que dependem da data de hoje, como o `gantt`, não enxergam a data real.

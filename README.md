@@ -25,6 +25,16 @@ para o que foi medido e o que ainda é suposição.
 A primeira execução baixa o [mini.test](https://github.com/echasnovski/mini.nvim) em
 `.deps/`. Formatação com `stylua`, lint com `selene`.
 
+Componente nativo (Rust 1.95, instalado pelo `rustup` a partir do `rust-toolchain.toml`):
+
+```sh
+cargo test                  # lógica pura, sem Neovim: os 14 tipos de diagrama, erros, guardas
+make native                 # compila e instala lua/deckle_native.so (falha se o build falhar)
+./scripts/test-native.sh    # make native + teste headless no nvim (exit 0 = sobreviveu)
+make bench                  # benchmark do flowchart
+make check-merman           # falha se o merman resolver para versão diferente da pinada
+```
+
 ## Como funciona
 
 Lua faz tudo que encosta no Neovim: treesitter (parsers vêm do **core**, sem
