@@ -13,6 +13,9 @@ base: lua51
 globals:
   vim:
     any: true
+  # Global do LuaJIT. `deckle.install` lê `jit.arch`, a arquitetura do processo.
+  jit:
+    any: true
   # Injetado pelo mini.test dentro dos arquivos de teste.
   MiniTest:
     any: true
