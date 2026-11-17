@@ -1,0 +1,6 @@
+# MSRV do merman-ascii. Com rustc mais antigo (1.93) o cargo resolve merman para
+# `0.7.0-alpha.1` sem avisar. Ver docs/validation.md (V5) e ADR-0002.
+[toolchain]
+channel = "1.95"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
