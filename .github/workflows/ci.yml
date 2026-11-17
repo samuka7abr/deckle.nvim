@@ -54,3 +54,55 @@ jobs:
           neovim: true
           version: ${{ matrix.nvim-version }}
       - run: ./scripts/test.sh
+
+  # Camada 1: crate Rust `deckle-native`. Os jobs abaixo so cobrem o Rust e o `.so`.
+  rust:
+    name: rust (fmt, clippy, test, merman)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      # A versao vem do rust-toolchain.toml, para a CI e a maquina local nao divergirem.
+      # Sem argumento o rustup instala o que o arquivo pede, mas isso depende de rustup >= 1.28;
+      # ler o canal do arquivo funciona em qualquer versao.
+      - name: Instalar a toolchain do rust-toolchain.toml
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "${channel}"
+          rustup toolchain install "${channel}" --profile minimal --component rustfmt --component clippy
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace
+      # Falha se o cargo resolver o merman para versao diferente da pinada (V5).
+      - name: versao do merman
+        run: ./scripts/check-merman-version.sh
+
+  native:
+    name: native (nvim ${{ matrix.nvim-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nvim-version: [v0.11.0, nightly]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar a toolchain do rust-toolchain.toml
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "${channel}"
+          rustup toolchain install "${channel}" --profile minimal
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim-version }}
+      # `make native` falha alto se o build falhar, e o script confere o exit code do nvim
+      # (134 = abort, e a regressao de V2 que este job existe para pegar).
+      - run: ./scripts/test-native.sh

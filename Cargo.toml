@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/deckle-native"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# `panic = "abort"` NAO pode entrar aqui: o catch_unwind da camada mlua depende de unwind.
+panic = "unwind"

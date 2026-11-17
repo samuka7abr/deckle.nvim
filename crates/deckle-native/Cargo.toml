@@ -1,0 +1,20 @@
+[package]
+name = "deckle-native"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.95"
+description = "Camada 1 do deckle.nvim: renderiza Mermaid em arte de texto para o Neovim via mlua."
+license = "MIT"
+publish = false
+
+[lib]
+name = "deckle_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Versao EXATA e IDENTICA nos dois crates. Alpha que quebra API entre versoes, e `cargo add`
+# ja resolveu versoes diferentes para os dois (V5). Ao subir, mude os dois, o ADR-0002, o
+# CLAUDE.md e `MERMAN_VERSION` em scripts/check-merman-version.sh.
+merman-core = "=0.8.0-alpha.6"
+merman-ascii = "=0.8.0-alpha.6"
+mlua = { version = "0.11", features = ["module", "luajit"] }
