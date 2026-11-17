@@ -77,6 +77,12 @@ fonte → treesitter → IR (lista de blocos) → medir largura → emitir linha
 O IR é uma lista plana de blocos com metadado de origem. Cada bloco carrega
 `src_start` / `src_end` (linhas no fonte), que é o que alimenta a sincronia de scroll.
 
+O render é `render(ir, { width, charset }) -> { lines, marks, map }`, função pura que não toca
+em buffer nem em janela (quem escreve é `preview.lua`). Um módulo por tipo de bloco recebe
+`(block, ctx)` e devolve `lines, marks`; contêineres (`quote`, `list`) renderizam os filhos
+numa largura menor e prefixam as linhas. O contrato completo está em LuaCATS no topo de
+`lua/deckle/render/init.lua`.
+
 ## 5. Fronteira Lua ↔ Rust
 
 Uma chamada por diagrama. Sem conversas de ida e volta.
@@ -171,8 +177,9 @@ deckle.nvim/
 ├── lua/deckle/
 │   ├── init.lua          setup, comandos
 │   ├── parse.lua         treesitter → IR
-│   ├── render/           IR → linhas + spans (um módulo por tipo de bloco)
-│   ├── preview.lua       janela, buffer, extmarks
+│   ├── render/           IR → linhas + marcas + mapa (um módulo por tipo de bloco)
+│   ├── preview.lua       janela, buffer, extmarks, re-render com debounce
+│   ├── highlight.lua     grupos DeckleH1..H6, DeckleCode, DeckleQuote... (default, linkados)
 │   ├── sync.lua          scroll sync
 │   ├── native.lua        carrega o .so, degrada se ausente
 │   ├── caps.lua          detecção de capacidade de terminal
