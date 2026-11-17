@@ -78,20 +78,69 @@ T["despacho"]["subcomando desconhecido avisa e não lança"] = function()
   eq(child.lua_get([[_G.captured[1].level == vim.log.levels.ERROR]]), true)
 end
 
-T["despacho"]["sem argumento equivale a `toggle`"] = function()
-  capture_notifications()
-  child.cmd("Deckle")
-  eq(child.lua_get([[_G.captured[1].msg:match("`toggle`") ~= nil]]), true)
+--- Troca `deckle.preview` por um registrador: o teste de despacho é sobre quem chama quem,
+--- não sobre o que o preview faz (isso é `tests/test_preview.lua`).
+local function stub_preview()
+  child.lua([[
+    _G.calls = {}
+    local function record(name)
+      return function(...)
+        table.insert(_G.calls, { name = name, nargs = select("#", ...) })
+      end
+    end
+    package.loaded["deckle.preview"] = {
+      open = record("open"),
+      close = record("close"),
+      toggle = record("toggle"),
+      refresh = record("refresh"),
+    }
+  ]])
 end
 
-T["despacho"]["os subcomandos de render avisam que ainda não existem"] = function()
+T["despacho"]["sem argumento equivale a `toggle`"] = function()
+  stub_preview()
+  child.cmd("Deckle")
+  eq(child.lua_get([[_G.calls]]), { { name = "toggle", nargs = 0 } })
+end
+
+T["despacho"]["open, close, toggle e refresh vão para o preview, uma chamada cada"] = function()
+  stub_preview()
   capture_notifications()
   for _, name in ipairs({ "open", "close", "toggle", "refresh" }) do
     child.cmd("Deckle " .. name)
   end
-  eq(child.lua_get([[#_G.captured]]), 4)
-  eq(child.lua_get([[_G.captured[1].msg:match("not wired yet") ~= nil]]), true)
-  eq(child.lua_get([[_G.captured[1].level == vim.log.levels.WARN]]), true)
+  eq(child.lua_get([[_G.calls]]), {
+    { name = "open", nargs = 0 },
+    { name = "close", nargs = 0 },
+    { name = "toggle", nargs = 0 },
+    { name = "refresh", nargs = 0 },
+  })
+  -- E nenhum aviso de "ainda não existe": os subcomandos estão ligados.
+  eq(child.lua_get([[#_G.captured]]), 0)
+end
+
+T["despacho"]["subcomando desconhecido não chega ao preview"] = function()
+  stub_preview()
+  capture_notifications()
+  child.cmd("Deckle bogus")
+  eq(child.lua_get([[#_G.calls]]), 0)
+end
+
+T["despacho"]["o preview só é carregado quando um subcomando dele roda"] = function()
+  child.lua([[require("deckle")]])
+  eq(child.lua_get([[package.loaded["deckle.preview"] ~= nil]]), false)
+  eq(child.lua_get([[package.loaded["deckle.render"] ~= nil]]), false)
+  child.cmd("Deckle open")
+  eq(child.lua_get([[package.loaded["deckle.preview"] ~= nil]]), true)
+  eq(child.lua_get([[package.loaded["deckle.render"] ~= nil]]), true)
+end
+
+T["despacho"]["`open` num buffer de verdade abre a janela de preview"] = function()
+  child.lua([[vim.api.nvim_buf_set_lines(0, 0, -1, false, { "# t" })]])
+  child.cmd("Deckle open")
+  eq(child.lua_get([[#vim.api.nvim_list_wins()]]), 2)
+  child.cmd("Deckle close")
+  eq(child.lua_get([[#vim.api.nvim_list_wins()]]), 1)
 end
 
 T["despacho"]["`health` abre o checkhealth"] = function()

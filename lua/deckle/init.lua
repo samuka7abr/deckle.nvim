@@ -10,43 +10,28 @@ local M = {}
 ---@type string[]
 local subcommands = { "open", "close", "toggle", "refresh", "health" }
 
---- Fase do roadmap em que cada subcomando passa a fazer alguma coisa. A fase 0 entrega o
---- esqueleto e o despacho; render e janela são fases 2 em diante.
----@type table<string, string>
-local arrives_in = {
-  open = "the preview buffer (phase 2)",
-  close = "the preview buffer (phase 2)",
-  toggle = "the preview buffer (phase 2)",
-  refresh = "the render pipeline (phase 2)",
-}
-
 ---@param msg string
 ---@param level integer|nil
 local function notify(msg, level)
   vim.notify("deckle: " .. msg, level or vim.log.levels.INFO)
 end
 
----@param name string
-local function not_implemented(name)
-  notify(
-    string.format("`%s` is not wired yet — it arrives with %s", name, arrives_in[name]),
-    vim.log.levels.WARN
-  )
-end
-
+--- `open`, `close`, `toggle` e `refresh` são do `deckle.preview`, carregado só quando o
+--- subcomando roda. Atuam sobre o buffer atual, ou sobre o fonte dele se o foco estiver no
+--- preview.
 ---@type table<string, fun(args: string[])>
 local handlers = {
   open = function()
-    not_implemented("open")
+    require("deckle.preview").open()
   end,
   close = function()
-    not_implemented("close")
+    require("deckle.preview").close()
   end,
   toggle = function()
-    not_implemented("toggle")
+    require("deckle.preview").toggle()
   end,
   refresh = function()
-    not_implemented("refresh")
+    require("deckle.preview").refresh()
   end,
   health = function()
     vim.cmd("checkhealth deckle")
