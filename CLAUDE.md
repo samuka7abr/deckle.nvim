@@ -4,12 +4,16 @@ Preview de Markdown num buffer separado somente-leitura dentro do Neovim. Lua fa
 encosta na API do editor. Um `.so` opcional em Rust (via mlua) renderiza Mermaid em arte de
 texto usando o crate `merman`.
 
-**Estado: fases 0, 1 e 6 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
-`parse`), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
-`crates/deckle-native/` com `Makefile`, e a CI. Não existem render, preview nem sync: `:Deckle
-open` ainda só avisa. A forma do IR que `parse.lua` devolve está em LuaCATS no topo do
-módulo, e as fases 2 a 5 dependem dela: mudar um campo lá é mudar o contrato. Confira que um
-comando existe antes de rodá-lo.
+**Estado: fases 0, 1, 2 e 6 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
+`parse`, `preview`, `highlight` e `render/` com um módulo por tipo de bloco), `plugin/deckle.lua`,
+`tests/` (mini.test), `scripts/test.sh`, o crate `crates/deckle-native/` com `Makefile`, e a CI.
+`:Deckle open|close|toggle|refresh` funcionam: o render de texto e o buffer de preview estão
+prontos. `code`, `table` e `html` saem como texto cru (fallbacks de `render/code.lua`,
+`render/table.lua` e `render/html.lua`; as fases 4 e 5 trocam a implementação), e não existe
+sync: o mapa `preview -> fonte` já sai do render, mas ninguém o consome (fase 3). Dois
+contratos em LuaCATS, e as fases 3 a 5 e 7 dependem deles: o IR no topo de `parse.lua` e o
+render (módulo por tipo, `ctx`, marcas, mapa) no topo de `render/init.lua`. Mudar um campo
+lá é mudar o contrato. Confira que um comando existe antes de rodá-lo.
 
 ## Leia antes de decidir
 
@@ -71,7 +75,21 @@ suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir e
   `parse.lua` barra o documento antes de chamar o treesitter. Todo teste que alimenta o
   parser com entrada hostil roda num Neovim filho. (V6)
 - `[x]: url` não é reconhecido como definição de link: colide com o item de tarefa `[x]`.
-  Não use `x` de rótulo em fixture.
+  Não use `x` de rótulo em fixture. Tampouco `- ---` como "item com regra": é uma regra só
+  (CommonMark), não uma lista.
+- Dividir texto em clusters é `vim.fn.split(s, "\\zs")`: sequência com ZWJ, emoji com tom de
+  pele e VS16 saem como um cluster de largura 2. Por byte ou por codepoint o wrap parte o
+  emoji ao meio. Largura de um cluster é `strdisplaywidth` dele, e a medida mínima de conteúdo
+  é `render.MIN_WIDTH` (10): abaixo dela o conteúdo transborda em vez de virar coluna de uma
+  letra.
+- Apagar o buffer de preview de dentro do `BufDelete`/`BufWipeout` dele mesmo dá E937 (buffer
+  em uso). O `preview.lua` agenda a limpeza para a volta seguinte do laço.
+- Em teste com Neovim filho (RPC), `TextChanged` e `WinResized` só disparam quando o laço
+  principal anda, e o que o faz andar é uma tecla (`child.type_keys`). `nvim_exec_autocmds`
+  entrega o evento sem laço nenhum, e basta para os handlers do preview, que ignoram o
+  conteúdo do evento.
+- Todo `hl` que um módulo de render escreve nas marcas precisa existir em
+  `lua/deckle/highlight.lua`: há teste que varre o código-fonte atrás de `"Deckle..."`.
 
 ## Fluxo de trabalho
 
