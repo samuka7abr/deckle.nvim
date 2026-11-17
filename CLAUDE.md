@@ -4,8 +4,12 @@ Preview de Markdown num buffer separado somente-leitura dentro do Neovim. Lua fa
 encosta na API do editor. Um `.so` opcional em Rust (via mlua) renderiza Mermaid em arte de
 texto usando o crate `merman`.
 
-**Estado: só documentação.** Não existe `lua/`, `crates/`, `tests/` nem `scripts/`. Antes de
-rodar qualquer comando de build ou teste, confira se ele já existe. Nenhum deles existe hoje.
+**Estado: fases 0, 1 e 6 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
+`parse`), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
+`crates/deckle-native/` com `Makefile`, e a CI. Não existem render, preview nem sync: `:Deckle
+open` ainda só avisa. A forma do IR que `parse.lua` devolve está em LuaCATS no topo do
+módulo, e as fases 2 a 5 dependem dela: mudar um campo lá é mudar o contrato. Confira que um
+comando existe antes de rodá-lo.
 
 ## Leia antes de decidir
 
@@ -62,6 +66,12 @@ suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir e
 - Sempre confira o exit code do `nvim --headless`. **134 é abort**, não falha de teste.
 - O buffer de preview não tem `filetype=markdown`, então a injeção de treesitter em code block
   não acontece sozinha. O highlight é refeito à mão com `get_string_parser`.
+- O parser de Markdown **aborta o Neovim** (assert no scanner externo, exit 134, sem `pcall`
+  que segure) com ~200 contêineres aninhados abertos, p. ex. `- > ` repetido 200 vezes.
+  `parse.lua` barra o documento antes de chamar o treesitter. Todo teste que alimenta o
+  parser com entrada hostil roda num Neovim filho. (V6)
+- `[x]: url` não é reconhecido como definição de link: colide com o item de tarefa `[x]`.
+  Não use `x` de rótulo em fixture.
 
 ## Fluxo de trabalho
 

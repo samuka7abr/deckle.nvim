@@ -214,6 +214,57 @@ ao vivo; 46ms exige debounce e cache por hash do bloco.
 
 ---
 
+## V6 — O scanner de Markdown aborta o Neovim com aninhamento fundo
+
+**Por quê importa:** é o mesmo modo de falha de V2 (processo morto, trabalho não salvo
+perdido) vindo de onde ninguém espera: um `.md` com listas e citações aninhadas.
+
+Neovim 0.11.5, parser `markdown` do core, texto entregue a `get_string_parser(...):parse(true)`:
+
+```
+nvim: lib/src/parser.c:410: ts_parser__external_scanner_serialize: Assertion `length <= 1024' failed.
+exit code: 134
+```
+
+`pcall` **não** captura: é `assert` em C. O estado do scanner externo (a pilha de blocos
+abertos, cerca de 1 byte por contêiner) passa de 1024 bytes. Limiar medido em processos
+separados, com `n` repetições da forma e o número de contêineres abertos entre parênteses:
+
+| forma | passou | abortou |
+|---|---|---|
+| `- > ` × n, numa linha (2n) | n=100 (200) | n=128 (256) |
+| `> ` × n, numa linha | n=200 | n=256 |
+| `- ` × n, numa linha | n=200 | n=256 |
+| item aninhado por recuo de 2 colunas, n linhas | n=200 | n=256 |
+| item ordenado aninhado por recuo de 3 colunas, n linhas | n=200 | n=256 |
+| `> ` × k na linha k, n linhas | n=200 | n=256 |
+| só espaços de recuo (sem marcador), até 800 colunas | passou | — |
+
+O limiar é entre 200 e 256 contêineres abertos, e não depende da forma. Recuo sem marcador
+não abre contêiner. Tempo de parse não é o problema: o caso que passa mais lento levou 10ms.
+
+**Consequência em `lua/deckle/parse.lua`:** antes de chamar o treesitter, uma varredura de uma
+passada estima, por excesso, quantos contêineres cada linha abre (marcadores `>` e de lista,
+mais 1 nível por 2 colunas de recuo antes de um marcador). Acima de 64 (`MAX_NESTING`, mais
+de 3 vezes de folga em relação ao limiar) o documento inteiro cai no caminho cru: um
+`paragraph` por trecho entre linhas em branco. Os testes rodam nove casos patológicos (sete
+formas) num Neovim filho e não são vacuosos: com `MAX_NESTING` desligado, `- > ` × 300
+derruba o processo com exit 134.
+
+**Não foi medido:** o limiar em Neovim 0.11.0 e nightly (a guarda não depende dele, e os
+testes passam nos três), nem se existe outra combinação de entrada que dispare outro
+`assert` do mesmo scanner. O fuzz de 600 documentos da suíte não achou nenhuma.
+
+---
+
+## V7 — Custo do parser
+
+Neovim 0.11.5, `parse_lines` sobre os fixtures repetidos até 5124 linhas (1484 blocos, todos
+os tipos): **110ms** no total, de uma vez e com o treesitter incluído. Um bloco de código de
+2000 linhas: **14ms**. A fase 2 re-renderiza com debounce; o parse sozinho não precisa de cache.
+
+---
+
 ## Como reproduzir
 
 Os spikes vivem em `/tmp` e são descartáveis. Para refazer:

@@ -1,0 +1,71 @@
+return {
+  {
+    kind = "heading",
+    level = 1,
+    spans = { { kind = "text", text = "Título um" } },
+    src_start = 0,
+    src_end = 1,
+  },
+  {
+    kind = "heading",
+    level = 2,
+    spans = {
+      { kind = "text", text = "Título " },
+      { kind = "emphasis", children = { { kind = "text", text = "dois" } } },
+      { kind = "text", text = " com " },
+      { kind = "code", text = "código" },
+    },
+    src_start = 2,
+    src_end = 3,
+  },
+  {
+    kind = "heading",
+    level = 3,
+    spans = { { kind = "text", text = "Fechado com hashes" } },
+    src_start = 4,
+    src_end = 5,
+  },
+  {
+    kind = "heading",
+    level = 4,
+    spans = {
+      { kind = "text", text = "Quatro com " },
+      {
+        kind = "link",
+        children = { { kind = "text", text = "link" } },
+        href = "https://example.com",
+      },
+    },
+    src_start = 6,
+    src_end = 7,
+  },
+  {
+    kind = "heading",
+    level = 5,
+    spans = { { kind = "text", text = "Cinco" } },
+    src_start = 8,
+    src_end = 9,
+  },
+  {
+    kind = "heading",
+    level = 6,
+    spans = { { kind = "text", text = "Seis" } },
+    src_start = 10,
+    src_end = 11,
+  },
+  {
+    kind = "heading",
+    level = 1,
+    spans = { { kind = "text", text = "Setext um" } },
+    src_start = 12,
+    src_end = 14,
+  },
+  {
+    kind = "heading",
+    level = 2,
+    spans = { { kind = "text", text = "Setext dois" } },
+    src_start = 15,
+    src_end = 17,
+  },
+  { kind = "heading", level = 1, spans = {}, src_start = 18, src_end = 19 },
+}

@@ -130,6 +130,25 @@ Bloco desconhecido vira `paragraph` com o texto cru. O parser nunca lança.
 **Risco:** o gate 4 é chato de escrever e é exatamente o que impede a fase 3 de virar
 caça a off-by-one.
 
+**Entregue.** A forma final do IR está em LuaCATS no topo de `lua/deckle/parse.lua`; é a
+referência das fases 2 a 5, não o esboço acima. O que difere dele ou vai além:
+
+- Span `break` (quebra forçada de linha), que o esboço não tinha. Sem ele o render não
+  distingue quebra suave de forçada. Quebra suave é `"\n"` dentro de `text`.
+- `strong`, `emphasis` e `link` aninham por `children`; `image.alt` é texto simples.
+- Item de lista tem `src_start`/`src_end` próprios, e `checked` em item de tarefa.
+- `table` carrega `header`, `rows` (não normalizadas) e `align`, que tem buracos: use
+  `#header` para o número de colunas.
+- Link de referência é resolvido pela definição do documento, e a definição (`[r]: url`) não
+  gera bloco.
+- Front matter e qualquer nó que o treesitter não entenda (`ERROR` inclusive) viram `paragraph`
+  cru. Tachado, entidades e HTML inline passam crus dentro de `text`.
+- `src_end` nunca inclui linha em branco final, e o saneamento final garante irmãos em ordem
+  e filhos dentro do pai, mesmo com árvore quebrada.
+- **Guarda de aninhamento.** O scanner de Markdown aborta o processo com ~200 contêineres
+  abertos (V6 em `docs/validation.md`). Acima de `MAX_NESTING` o documento inteiro cai no
+  caminho cru, e acima de `MAX_DEPTH` só o contêiner fundo demais.
+
 ---
 
 ## Fase 2 — Render de texto e buffer de preview
