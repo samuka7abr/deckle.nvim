@@ -8,9 +8,11 @@ Sem browser, sem servidor web, sem webview.
 
 ## Estado
 
-**Fase 0 do [roadmap](docs/roadmap.md): fundação.** Existe o esqueleto — `:Deckle` com
-subcomandos, configuração validada, `:checkhealth deckle`, suíte de testes e CI. Ainda não
-existe render: `:Deckle open` avisa que o preview chega na fase 2.
+**Fases 0, 1 e 6 do [roadmap](docs/roadmap.md).** Existe o esqueleto — `:Deckle` com
+subcomandos, configuração validada, `:checkhealth deckle`, suíte de testes e CI — mais o
+parser (`lua/deckle/parse.lua`, Markdown para IR via treesitter, com a forma do IR
+documentada no topo do módulo) e o crate Rust `deckle-native`. Ainda não existe render:
+`:Deckle open` avisa que o preview chega na fase 2.
 
 A arquitetura foi validada empiricamente — ver [`docs/validation.md`](docs/validation.md)
 para o que foi medido e o que ainda é suposição.
@@ -24,6 +26,13 @@ para o que foi medido e o que ainda é suposição.
 
 A primeira execução baixa o [mini.test](https://github.com/echasnovski/mini.nvim) em
 `.deps/`. Formatação com `stylua`, lint com `selene`.
+
+Os testes do parser comparam o IR de `tests/fixtures/*.md` com o snapshot ao lado
+(`*.lua`). Depois de mudar o IR de propósito, regenere e **revise o diff** antes de commitar:
+
+```sh
+DECKLE_UPDATE_SNAPSHOTS=1 ./scripts/test.sh tests/test_parse.lua && stylua tests/
+```
 
 Componente nativo (Rust 1.95, instalado pelo `rustup` a partir do `rust-toolchain.toml`):
 
