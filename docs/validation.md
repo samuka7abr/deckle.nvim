@@ -265,6 +265,29 @@ os tipos): **110ms** no total, de uma vez e com o treesitter incluído. Um bloco
 
 ---
 
+## V8 — Clusters, largura e custo do render (fase 2)
+
+**Por quê importa:** o wrap por largura de display é o que quebra implementação de preview com
+emoji e CJK, e o render roda a cada `TextChanged` com debounce.
+
+Neovim 0.11.0, 0.11.5 e nightly (0.13.0-dev), com resultado idêntico nos três:
+
+- `vim.fn.split(s, "\\zs")` devolve uma sequência com ZWJ (👨‍👩‍👧, 18 bytes) como **um** cluster
+  de `strdisplaywidth` 2. Cinco delas em sequência dão cinco clusters de 2. Emoji com tom de
+  pele e com VS16 (❤️) também saem como um cluster de 2. Um acento combinante fica com a letra.
+- `strdisplaywidth`: emoji 2, CJK 2, `•` `─` `│` 1 (com `ambiwidth=single`; com `double` o
+  `render/rule.lua` divide a largura pela do glifo).
+- Custo de `render.render` sobre os fixtures repetidos até 5103 linhas de fonte (1269 blocos,
+  4616 linhas de preview, 3132 marcas): **24 a 28ms**, contra ~110ms do parse (V7). O README do
+  projeto (90 linhas): **~0.8ms**. Um parágrafo de 20000 palavras: 13 a 23ms. Um parágrafo CJK
+  de 35000 caracteres: 32 a 36ms.
+
+**Não foi medido:** nada numa UI de terminal de verdade. Os testes de preview são headless, e
+`TextChanged`, `InsertLeave` e `WinResized` reais são exercitados com teclas enviadas por RPC
+(`child.type_keys`). Fora de uma tecla, num Neovim sem UI, `WinResized` não dispara.
+
+---
+
 ## Como reproduzir
 
 Os spikes vivem em `/tmp` e são descartáveis. Para refazer:

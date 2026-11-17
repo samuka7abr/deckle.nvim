@@ -180,6 +180,51 @@ Contrato: `render(ir, opts) -> { lines, marks, map }`.
 
 **Anti-escopo:** tabelas, code blocks com cor, scroll sync.
 
+**Entregue.** O contrato do render (módulo por tipo, `ctx`, marcas, mapa) está em LuaCATS no
+topo de `lua/deckle/render/init.lua`, e o do buffer de preview (ciclo de vida, eventos,
+`state()`) no topo de `lua/deckle/preview.lua`: são a referência das fases 3, 4, 5 e 7. O que
+difere do esboço acima ou vai além:
+
+- **Contrato do módulo por tipo:** `lua/deckle/render/<kind>.lua` devolve `{ render = fn }`, com
+  `fn(block, ctx) -> lines, marks`. `ctx` é `{ width, charset, indent, depth, block }`:
+  `width` já descontado o prefixo dos contêineres, `charset` já resolvido (nunca `"auto"`),
+  `indent` e `depth` informativos, e `ctx.block(child, consumed, extra)` renderiza um filho
+  numa largura menor. Recuo e borda são do contêiner (`quote`, `list`), não do módulo.
+- **Marcas** são `{ row, col, end_col, hl }`, com `col` e `end_col` em **bytes**
+  0-indexados (fim exclusivo), o que `nvim_buf_set_extmark` espera. Marcas se sobrepõem.
+- **Mapa** tem um campo além do pedido: `{ preview_start, preview_end, src_start, src_end }`.
+  O `preview_end` (exclusivo) evita que a fase 3 deduza o fim do bloco pela entrada seguinte, e
+  deixa explícito que a linha em branco entre blocos não pertence a nenhum. Só blocos de topo.
+- **`code`, `table` e `html`** saem como texto cru em `render/code.lua`, `render/table.lua` e
+  `render/html.lua`. As fases 4 e 5 trocam a implementação, não o nome nem a assinatura.
+- **Degradação:** o dispatcher captura o erro de um módulo de tipo e desenha, no lugar daquele
+  bloco, uma linha `[deckle: could not render <kind> block]` (`DeckleError`). O resto do
+  documento renderiza. Tem teste que força o erro.
+- **`charset = "auto"`** vira `"unicode"`, salvo `TERM=linux` ou `dumb`, que viram `"ascii"`.
+  É heurística, não foi medida em terminal nenhum.
+- **H1 e H2** ganham um sublinhado (`═`, `─`) do tamanho da linha mais larga: com todos os
+  `DeckleH1` a `DeckleH6` linkados a `Title`, os níveis ficariam indistinguíveis.
+- **Imagem** vira `[image: alt]`; link mostra só o texto (o destino não aparece).
+- **Lista** sai sempre apertada: o IR não distingue lista solta de apertada. Marcador por nível
+  (`•`, `◦`, `▪`; `-`, `*`, `+` em ASCII), número alinhado à direita, tarefa troca o marcador.
+- **`TextChangedI` ficou de fora.** O preview renderiza em `TextChanged` e `InsertLeave`, os
+  dois que o roadmap pede: digitando, o preview espera a saída do modo insert. Entra com uma
+  linha em `attach` se alguém quiser (V8: um documento de 5000 linhas renderiza em ~26ms, mais
+  ~110ms de parse), mas é decisão de produto, não de gate.
+- **Janela de preview** sem `wrap`: o que passa da largura (código, diagrama) rola na
+  horizontal em vez de ser partido. Com `config.width` e `split = "vsplit"`, a janela é
+  redimensionada para essa largura.
+- **Fechar mantém o buffer.** `:Deckle close` fecha a janela e remove os autocmds vivos, mas o
+  buffer de preview fica, escondido, para a próxima abertura (a contagem de buffers não cresce
+  por ciclo). O que o descarta é o fonte ou o próprio preview ser apagado. Sobra, por fonte,
+  um autocmd (`BufDelete`/`BufWipeout`) que dispara esse descarte.
+- **Eventos `User`** (`DeckleOpen`, `DeckleRender`, `DeckleClose`, com `{ src_buf, buf, win }`)
+  e `preview.state(src_buf)` são o ponto de encaixe da fase 3: ela escuta o `DeckleRender`
+  para reler o mapa, sem editar `preview.lua`.
+- **Não foi validado:** o preview numa UI de terminal de verdade (os testes são headless, com
+  teclas reais enviadas por RPC), a heurística de `charset = "auto"`, e a quebra de linha
+  de CJK diante de pontuação (um `。` pode abrir uma linha: não há regra de kinsoku).
+
 ---
 
 ## Fase 3 — Sincronia de scroll
