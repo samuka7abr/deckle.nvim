@@ -1069,6 +1069,9 @@ T["preview"] = new_set({
       child.restart({ "-u", "tests/minimal_init.lua" })
       child.o.columns = 100
       child.o.lines = 30
+      -- `charset = "auto"` vira ASCII com TERM=linux/dumb, que é o que uma CI pode ter, e o caso
+      -- da cor procura a borda Unicode da moldura. O ambiente de quem roda não entra.
+      child.lua([[vim.env.TERM = "xterm-256color"]])
     end,
     post_once = child.stop,
   },
