@@ -13,8 +13,9 @@
 --- # Layout
 ---
 --- * Cada coluna tem a largura da célula mais larga (cabeçalho incluído), medida com
----   `vim.fn.strdisplaywidth` (nunca `#str`), mais um espaço de cada lado. Emoji e CJK ocupam
----   duas células, e todas as linhas da tabela terminam na mesma coluna de display.
+---   `vim.api.nvim_strwidth` (nunca `#str`, e não `strdisplaywidth`, que depende da janela: ver
+---   `display_width`), mais um espaço de cada lado. Emoji e CJK ocupam duas células, e todas as
+---   linhas da tabela terminam na mesma coluna de display.
 --- * O alinhamento vem de `block.align[i]` (`"left"`, `"center"`, `"right"` ou `nil`, que é
 ---   esquerda) e vale para o cabeçalho também. No centro, a célula que sobra por ser ímpar
 ---   fica à direita.
