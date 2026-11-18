@@ -6,11 +6,12 @@
 # versoes diferentes o crate nem compila. Este script confere o que o cargo de fato
 # resolveu, nao o que o Cargo.toml pede.
 #
-# Ao subir o merman: mude PINNED aqui, os dois pinos em crates/deckle-native/Cargo.toml, o
+#
+# Ao subir o merman: mude PINNED aqui, os tres pinos em crates/deckle-native/Cargo.toml, o
 # ADR-0002 e o CLAUDE.md. Os quatro lugares precisam andar juntos.
 set -euo pipefail
 
-PINNED="0.8.0-alpha.6"
+PINNED="0.10.0"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 cd "${script_dir}/.."
@@ -20,8 +21,9 @@ fail() {
   exit 1
 }
 
-# 1. O Cargo.toml tem que pedir a versao exata (`=`) nos dois crates.
-for crate in merman-core merman-ascii; do
+# 1. O Cargo.toml tem que pedir a versao exata (`=`) nos tres crates (a partir da 0.10 o
+#    `merman-model` e dependencia direta: o `OperationControl` mora nele).
+for crate in merman-core merman-ascii merman-model; do
   declared="$(grep -E "^${crate}[[:space:]]*=" crates/deckle-native/Cargo.toml || true)"
   [[ -n "${declared}" ]] || fail "${crate} nao esta declarado em crates/deckle-native/Cargo.toml"
   [[ "${declared}" == *"\"=${PINNED}\""* ]] \
@@ -31,7 +33,7 @@ done
 # 2. O que o cargo resolveu. `--prefix none` imprime `nome vVERSAO` por linha.
 tree="$(cargo tree -p deckle-native --edges normal --prefix none)"
 
-for crate in merman-core merman-ascii; do
+for crate in merman-core merman-ascii merman-model; do
   resolved="$(awk -v c="${crate}" '$1 == c { print $2 }' <<<"${tree}" | sort -u)"
   [[ -n "${resolved}" ]] || fail "${crate} nao aparece na arvore do cargo"
   [[ "${resolved}" == "v${PINNED}" ]] \
