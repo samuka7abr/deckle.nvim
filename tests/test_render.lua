@@ -622,7 +622,13 @@ T["list"]["sublista cola no item; outro filho tem uma linha em branco antes"] = 
 end
 
 T["list"]["item aberto por bloco de código não tem linha de texto antes"] = function()
-  eq(r("- ```\n  codigo\n  ```").lines, { "• codigo" })
+  -- A moldura do código (fase 5) começa na linha do marcador, e o resto alinha com o texto.
+  local lines = r("- ```\n  codigo\n  ```", { width = 20 }).lines
+  eq(lines, {
+    "• ╭" .. string.rep("─", 16) .. "╮",
+    "  │ codigo" .. string.rep(" ", 8) .. " │",
+    "  ╰" .. string.rep("─", 16) .. "╯",
+  })
 end
 
 T["list"]["item vazio mostra só o marcador"] = function()
@@ -829,22 +835,10 @@ T["highlights"]["todo grupo definido é default, para o esquema do usuário venc
 end
 
 -- ---------------------------------------------------------------------------------------
--- Fallbacks de code, table e html (fases 4 e 5 trocam os módulos)
+-- Fallback de html (code e table têm teste próprio, em test_code.lua e test_table.lua)
 -- ---------------------------------------------------------------------------------------
 
 T["fallbacks"] = new_set()
-
-T["fallbacks"]["code: linhas cruas, sem wrap, com marca"] = function()
-  local long = string.rep("x", 60)
-  local result = r("```lua\nlocal a = 1\n\n    " .. long .. "\n```", { width = 20 })
-  eq(result.lines, { "local a = 1", "", "    " .. long })
-  eq(marked(result, "DeckleCode"), { "local a = 1", "    " .. long })
-end
-
-T["fallbacks"]["code: bloco vazio e bloco sem info string não lançam"] = function()
-  eq(r("```\n```").lines, {})
-  eq(r("```\nx\n```").lines, { "x" })
-end
 
 T["fallbacks"]["html: linhas cruas"] = function()
   local result = r("<div>\n  oi\n</div>")

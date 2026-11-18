@@ -333,6 +333,45 @@ não foi registrado.
 
 ---
 
+## V10 — Highlight de code block com parser de string (fase 5)
+
+**Por quê importa:** o buffer de preview não tem `filetype=markdown`, então a injeção do
+treesitter não acontece sozinha. O highlight é refeito à mão com `get_string_parser` e a query
+`highlights`, a cada render, e o que a API devolve de verdade define como isso degrada.
+
+Neovim 0.11.0, 0.11.5 e nightly (0.13.0-dev), com resultado idêntico nos três, salvo os tempos:
+
+- `vim.treesitter.language.get_lang(nome)` devolve **o próprio nome** quando nada foi
+  registrado: `sh`, `js`, `py`, `rs`, `yml` e `viml` voltam iguais. Alias não vem de graça, é
+  preciso uma tabela. `vim.filetype.match({ filename = "x.py" })` acha `python` e
+  `x.sh` devolve `nil` (o shell depende do conteúdo).
+- `language.add(lang)` de parser ausente **não lança**: devolve `nil, 'No parser for language
+  "x"'` (com `pcall`: `true, nil, msg`). Com parser, devolve `true`. `get_string_parser` na
+  mesma situação **lança**. `query.get` de linguagem sem parser devolve `nil`.
+- `parser:parse()` sem argumento devolve a árvore da linguagem do bloco e `children()` vazio.
+  `parse(true)` roda as injeções (Lua com `vim.cmd([[ ]])` ganha um filho `vim`). Sem o `true`,
+  nenhum outro parser é carregado por causa de um bloco de código.
+- As capturas de `lua` chegam como `keyword`, `variable`, `operator`, `string`, `comment`,
+  `keyword.return`, `number`, com `metadata` vazio.
+- Custo de um bloco de Lua denso (21 capturas por linha), `render.render` inteiro, em
+  Neovim 0.11.0, 0.11.5 e nightly: o parse de 6000 linhas leva ~16 a 21 ms e o laço de
+  `iter_captures` (44 mil capturas), ~105 ms, que é o que domina.
+
+  | bloco | a frio | com cache |
+  |---|---|---|
+  | 100 linhas | 9 a 10 ms | 0.2 a 0.5 ms |
+  | 2000 linhas (42 mil marcas de captura) | 115 a 131 ms | 9 a 14 ms |
+  | 5000 linhas (105 mil marcas de captura) | 397 a 445 ms | 30 a 49 ms |
+  | 2000 linhas, linguagem sem parser | 4 a 5 ms | |
+
+  O teto de 5000 linhas (`MAX_HIGHLIGHT_LINES`) vem daí: acima dele o custo a frio passa de
+  meio segundo, e o preview re-renderiza a cada edição.
+
+**Não foi medido:** parser de terceiros (só `lua`, `c` e `vim` vêm com o Neovim), se algum
+deles tem `assert` no scanner como o de Markdown (V6), e o tempo numa UI de terminal.
+
+---
+
 ## Como reproduzir
 
 Os spikes vivem em `/tmp` e são descartáveis. Para refazer:
