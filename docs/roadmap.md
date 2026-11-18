@@ -521,6 +521,67 @@ registrar a versão escolhida no ADR-0002.
 4. Reabrir o mesmo documento acerta o cache, verificado por contador.
 5. `charset = "ascii"` produz saída sem Unicode.
 
+**Entregue.** `lua/deckle/native.lua` (carregador), `lua/deckle/render/mermaid.lua` (módulo do
+bloco, cache e degradação) e a camada 1 no `lua/deckle/health.lua`. O contrato de cada um está
+no comentário do topo do arquivo; é a referência da fase 9 e do resto. O que difere do plano
+acima ou vai além dele:
+
+- **Despacho.** O dispatcher manda para `render/mermaid.lua` todo bloco `code` cujo `lang` é
+  exatamente `mermaid` (minúsculo; `Mermaid` e `mermaidx` seguem como código). É o único diff em
+  `render/init.lua`.
+- **`deckle.native`: `get()`, `status()`, `reset()`.** `get()` devolve o módulo de Rust ou `nil`.
+  A ordem de carga é `native.path` (por `package.loadlib`), `require("deckle_native")` (o
+  `lua/deckle_native.so` do `make native`, no runtimepath) e, por fim, o que
+  `install.info().path` aponta (por `package.loadlib`). **`native.path` é caminho explícito e
+  manda**: configurado e sem carregar, não cai para os degraus seguintes, porque carregar outro
+  binário em silêncio esconderia o erro de configuração (o motivo vai ao checkhealth). O resultado
+  da carga, bom ou ruim, é guardado pela sessão: nunca tenta de novo. `native.enabled` é lido a
+  cada chamada, não guardado, então desligar vale na hora e religar carrega. `status()` só lê
+  (`enabled`, `attempted`, `loaded`, `source`, `path`, `version`, `reason`) e não provoca a
+  carga; o checkhealth chama `get()` antes. `reset()` é só para teste.
+- **Degradação.** Qualquer falha (sem módulo, `native.enabled = false`, parse, grande demais, tipo
+  fora dos 14, resposta inválida, erro do próprio módulo) vira, só para aquele bloco, o
+  `render/code.lua` com `{ lang = "mermaid", lines, note }`: moldura com rótulo `mermaid` e a nota
+  `mermaid: <motivo>` numa linha `DeckleCodeNote` sob ela, cortada na largura pelo `code.lua`. O
+  motivo completo, sem corte, fica em `render.mermaid.last_error`. **Um `mermaid` sem nenhuma
+  linha não desenha nada** (nem nota), que é o que o `code.lua` faz com qualquer cerca vazia.
+- **Linha mais larga que a janela fica inteira.** O `width` do `ctx` vai ao crate como meta (o
+  merman tenta o perfil compacto), e o que ainda sobrar transborda como código: a janela de
+  preview não tem `wrap` e rola na horizontal. Cortar desalinharia a caixa, e o reflow é do
+  merman. Medido com um flowchart `LR` de quatro nós: 105 células numa janela de 40, sem
+  reticências, e o merman quebra o rótulo dentro do nó em vez de alargá-lo.
+- **Cache.** Chave é o SHA-256 (o `deckle.sha256`, que aceita NUL) de conteúdo, largura, charset,
+  **`max_src_lines` e `diagram_ty`**: os dois últimos mudam o resultado, e sem eles um erro de
+  "grande demais" seria servido depois de o limite subir. LRU de `cache_limit` (64) entradas, por
+  varredura do mais antigo, que só corre ao estourar o limite. Guarda também o **erro** do
+  render, que é determinístico e custa o mesmo que um sucesso; **não** guarda "nativo
+  indisponível", que é estado da sessão e não do diagrama. `cache_stats()` devolve
+  `{ hits, misses, size, limit }`: `hits` são consultas respondidas pelo cache, `misses` as que
+  foram ao crate; bloco sem nativo disponível ou com mais linhas que `max_src_lines` (o crate o
+  recusa antes do layout, de graça) não passa pelo cache e não conta em nenhum. Quem recebe as
+  linhas recebe uma cópia. Medido num flowchart de 60 arestas (605 linhas): 51,6 ms no primeiro
+  render, que inclui o `dlopen`, e 0,23 ms nos seguintes.
+- **`diagram_ty` só vem do bloco.** O módulo repassa `block.diagram_ty` se for string, mas nada no
+  parser o preenche (a cerca só diz `mermaid`): ele existe para quem montar um bloco à mão.
+- **Checkhealth.** Camada 1 quando o módulo carregou, com a versão, de onde veio e os tipos de
+  `supported_types()` lidos em runtime. Sem módulo é camada 0 com o motivo: `info` quando não há
+  binário nenhum ou `native.enabled = false` (é o estado normal, nada a consertar), e `warn`
+  com o que fazer quando há um binário (`native.path` ou o instalado) que não carregou. É o
+  único ponto do checkhealth que carrega o `.so`; a seção "Native binary" continua só lendo o
+  disco.
+- **Testes que exigem o `.so`.** `tests/native/test_mermaid_native.lua` (mini.test) é o gate com o
+  merman de verdade. Sem `lua/deckle_native.so` os casos são **pulados com aviso** (o job `test`
+  não tem Rust e roda a suíte inteira); `scripts/test-native.sh` o roda depois do `make native`
+  com `DECKLE_REQUIRE_NATIVE=1`, e aí a falta do `.so` falha. A degradação, o cache e o
+  carregador têm teste que não precisa do `.so` (`tests/test_mermaid.lua`, `tests/test_native.lua`,
+  um crate falso em `package.loaded`), e esses rodam em todo job. `tests/test_config.lua`
+  descarta `deckle.config` do `package.loaded`: teste que guarda o módulo no topo do arquivo
+  enxerga uma instância velha, e por isso `test_mermaid.lua` o pega por `require` a cada uso.
+- **Não foi validado:** o preview numa UI de terminal de verdade (como na fase 2); a cor de
+  `DeckleMermaid` (`Special`) em nenhum esquema; os oito tipos que saem como texto estruturado
+  (`gantt`, `mindmap`, `timeline`...) passando pelo preview, que só foram exercitados no crate; e
+  um diagrama de 200 linhas (o limite) no re-render de um documento de 5000 linhas.
+
 ---
 
 ## Fase 8 — Distribuição
