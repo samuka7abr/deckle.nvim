@@ -315,6 +315,82 @@ estreita; o preview numa UI de terminal de verdade; o degrau de simplificação 
 
 ---
 
+## V5c — Cor (TrueColor), entidades HTML e `bytes=` na 0.10.0
+
+**Por quê importa:** o merman 0.10.0 desenha em TrueColor, mas pinta mais do que o diagrama pediu,
+e a saída de vários tipos traz linhas que o autor não escreveu. Medido em 2026-11-18, rustc 1.95,
+com `make dump` (o mesmo caminho do plugin) e os blocos de `examples/mermaid.md`.
+
+### Cor
+
+- **O tema padrão pinta todo glifo.** Um `flowchart` sem `classDef` sai com texto `#27272a`, borda
+  `#a1a1aa`, linha de aresta `#71717a` e seta `#52525b`: um tema claro, que num esquema escuro
+  deixa o diagrama ilegível. O merman não tem tema "sem cor" (`AsciiColorTheme` não aceita
+  `None`, só `with_role(role, rgb)`). O crate monta um tema com uma **cor-sentinela** (`#010203`)
+  em todo papel de moldura (texto, bordas, arestas, títulos) e tira os escapes dela do resultado
+  (`clean::drop_theme_colors`): sobra só a cor que o diagrama pediu. Ficam com a cor do tema as
+  séries do xychart e a barra de ativação do sequence (são dado, não moldura). Um diagrama sem
+  `classDef`/`style` sai com **zero** escapes (teste, nos tipos mínimos e em `native`).
+- **O que o merman honra:** `classDef` (`fill`, `stroke`, `color`), `class`, `:::`, `style`,
+  `linkStyle`, `box rgb(...)` e `rect rgb(...)`, em flowchart, state e sequence. No **class** o
+  `classDef` e o `style` passam pelo parser e não viram cor (o bloco de class do showcase sai sem
+  nenhum escape).
+- **Fundo do rótulo.** Num nó com `fill`, o merman escreve o rótulo só com a cor de frente e põe
+  o fundo nas células ao redor (`ESC[48;2;..m ESC[0m`, rótulo, `ESC[48;2;..m ESC[0m`). O crate
+  estende o fundo ao rótulo (`clean::extend_node_backgrounds`) quando o trecho de texto fica
+  entre dois trechos com o **mesmo** fundo e não tem glifo de linha: o espaço entre dois nós e a
+  aresta entre dois nós da mesma classe não ganham fundo.
+- **A cor não muda o layout.** Sem os escapes, o texto é o do modo Plain, linha por linha, nos 14
+  tipos mínimos e em todos os blocos do showcase, em larguras 40 e 120, **salvo o espaço no fim
+  da linha**: no class e no ER o merman completa as linhas até um retângulo só no modo colorido
+  (invisível, e a largura do desenho é a mesma). Os testes comparam sem esse espaço.
+
+### Entidades HTML
+
+O `&lt;` continua literal na 0.10.0 (`a &lt; b` sai `a &lt; b`; o merman decodifica `&gt;`,
+`&amp;`, `&quot;` e o `#9829;` do Mermaid, mas devolve `<` como `&lt;`), com a caixa dimensionada
+para os 4 caracteres. O `clean::decode_entities` decodifica `&lt;`, `&gt;`, `&amp;`, `&quot;` e
+`&#39;` nas linhas prontas e devolve as células poupadas como espaços ao redor do texto do nó,
+sem deslocar a borda. Não conserta: `&#39;`, que o merman já entrega como `&amp;'` (o `#39;` é
+consumido como código de entidade do Mermaid; escreva `#39;`), e `&amp;lt;`, que o merman já
+decodifica uma vez (sai `<`).
+
+### `bytes=` na saída
+
+O merman-ascii escreve, junto do desenho ou no lugar dele, uma projeção do texto autoral em
+que **toda string vem enquadrada pelo tamanho em bytes** (`name(bytes=11)="deckle.nvim"`). Está
+no README do crate ("every authored string is UTF-8 byte-length framed and quoted") e não há
+opção que a desligue. Nos blocos de `examples/mermaid.md` (linhas que contêm `bytes=`, largura
+100):
+
+| tipo | linhas com `bytes=` | o que aparece |
+|---|---|---|
+| flowchart (6 blocos + 2 ILZA), sequence, state (2) | 0 | desenho |
+| class | 17 | desenho, mais `id(bytes=7)="Preview" --> id(bytes=8)="Renderer"` nas relações |
+| er | 49 | desenho, mais uma linha `type(bytes=3)="int" name(bytes=2)="id" ...` por atributo |
+| gantt | 72 | só texto: `title(bytes=30)="..."`, `section(bytes=10)=...`, `- task(bytes=31)=... [id(bytes=2)="f1", ...]` |
+| gitgraph | 25 | só texto: `seq=0 branch(bytes=4)="main" id(bytes=6)="inicio" kind=normal ...` |
+| journey | 24 | só texto: `task(bytes=39)="..." score=3 people=[bytes=3 "Dev"]` |
+| kanban | 38 | só texto: `card(bytes=21)="..." [id(bytes=2)="b1", ticket(bytes=6)="DK-150"]` |
+| mindmap | 51 | árvore (`├──`) com `node(bytes=7)="Camadas" id(bytes=7)="Camadas" section=0` |
+| packet | 11 | só texto: `range=[0..15] bits=16 label(bytes=15)="Porta de origem"` |
+| timeline | 25 | só texto: `section(bytes=18)=... - task(bytes=7)=... * event(bytes=29)=...` |
+| treeView | 53 | árvore (`└──`) com `[file] name(bytes=11)="deckle.nvim" [id=1, level=4]` |
+| xychart (2 blocos) | 7 e 4 | gráfico, mais `titleDisplay: chart(bytes=40)=...`, `xDomain: band categories=[...]` e `values: █ series=0 ... samples=[...]` (até 1040 colunas) |
+
+Os oito tipos de "texto estruturado" (gantt, gitgraph, journey, kanban, mindmap, packet,
+timeline, treeView) vêm da projeção primária `AsciiPrimaryProjection::StructuredText`, que o
+merman anuncia em `AsciiOutput.projection`; não há projeção desenhada alternativa para eles na
+0.10.0. Class, ER e xychart são desenho com linhas extras (a "divulgação" do texto autoral).
+
+### Não foi medido
+
+- O desenho colorido num terminal de verdade (só o texto e as marcas, em Neovim headless).
+- O `ansi.lua` (parser de SGR, outra branch): aqui o `mermaid.lua` o chama com `pcall(require)` e,
+  sem ele, remove os escapes com um `gsub`; os dois caminhos têm teste.
+
+---
+
 ## V6 — O scanner de Markdown aborta o Neovim com aninhamento fundo
 
 **Por quê importa:** é o mesmo modo de falha de V2 (processo morto, trabalho não salvo
