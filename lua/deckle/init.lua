@@ -8,7 +8,7 @@ local M = {}
 
 --- Ordem importa: é a ordem que aparece na completion.
 ---@type string[]
-local subcommands = { "open", "close", "toggle", "refresh", "health" }
+local subcommands = { "open", "close", "toggle", "refresh", "health", "install" }
 
 ---@param msg string
 ---@param level integer|nil
@@ -35,6 +35,9 @@ local handlers = {
   end,
   health = function()
     vim.cmd("checkhealth deckle")
+  end,
+  install = function()
+    require("deckle.install").install()
   end,
 }
 

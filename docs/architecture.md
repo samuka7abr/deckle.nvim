@@ -182,6 +182,9 @@ deckle.nvim/
 │   ├── highlight.lua     grupos DeckleH1..H6, DeckleCode, DeckleQuote... (default, linkados)
 │   ├── sync.lua          scroll sync
 │   ├── native.lua        carrega o .so, degrada se ausente
+│   ├── install.lua       baixa/compila o .so, confere SHA-256, registra a origem
+│   ├── sha256.lua        SHA-256 em Lua puro (vim.fn.sha256 não serve para binário)
+│   ├── version.lua       versão do plugin: monta a URL da release
 │   ├── caps.lua          detecção de capacidade de terminal
 │   └── health.lua        :checkhealth deckle
 ├── crates/deckle-native/ cdylib mlua → merman
@@ -197,6 +200,30 @@ Seguindo o padrão do `blink.cmp`, que é o plugin Neovim com backend Rust mais 
 3. Se as duas falharem, camada 0 — o plugin funciona sem mermaid renderizado
 
 Matriz de CI: linux/macos/windows × x86_64/aarch64.
+
+Como ficou na fase 8:
+
+- **Release.** `.github/workflows/release.yml` compila o cdylib nos seis alvos, em runner
+  nativo quando existe, e publica `deckle_native-<alvo>.<so|dylib|dll>` mais um `.sha256` por
+  arquivo (formato do `sha256sum`). Antes de subir, cada runner nativo instala o artefato pelo
+  instalador de verdade e roda a bateria de `tests/native/native_headless.lua` nele. Só
+  tag `v*` publica; `workflow_dispatch` e PR deixam os artefatos no workflow.
+- **Versão.** `lua/deckle/version.lua` é a fonte; a URL é `.../releases/download/v<versão>/`.
+  A CI recusa uma tag que não bate (`v0.2.0-rc` vale para `0.2.0`).
+- **Instalador.** `lua/deckle/install.lua`: detecta o alvo por `jit.arch` (a arquitetura do
+  processo, que é o que o `dlopen` exige) e `uv.os_uname()`, baixa com `curl` por
+  `vim.system`, confere o SHA-256 (`lua/deckle/sha256.lua`, Lua puro: `vim.fn.sha256`
+  responde `E976` a binário com NUL), instala por `rename` e registra a origem em
+  `install.json`. Sem binário, `cargo build --release --locked`; sem cargo, camada 0.
+  **Checksum que não bate aborta sem tentar o cargo.**
+- **Onde fica.** `stdpath("data")/deckle/deckle_native.<so|dll>`, não dentro do plugin: o
+  gerenciador apaga e recria o diretório do plugin, e Nix o deixa somente-leitura. No macOS
+  o `.dylib` da release é instalado como `deckle_native.so`, porque o `package.cpath` do
+  LuaJIT não procura `.dylib`. O `make native` deixa o binário em `lua/` e tem precedência.
+- **Contrato com a fase 7.** `require("deckle.install").info()` devolve
+  `{ origin = "release" | "build" | "missing", path, version, target, source, reason,
+  last_error }`, só lendo o disco. Um binário de versão diferente da do plugin conta como
+  `missing`. Carregar é `package.loadlib(info.path, "luaopen_deckle_native")`.
 
 ## 10. Riscos
 
@@ -224,8 +251,13 @@ Honestidade sobre os limites da validação:
 
 - **Nada foi testado em Neovim 0.10.x.** Só existe 0.11.5 na máquina de teste. O piso de
   versão suportada é uma decisão em aberto, não um fato medido.
-- **Nada foi testado em macOS ou Windows.** O `.so` do mlua carregou em Linux/glibc.
-  macOS exige flags de link (`-undefined dynamic_lookup`) que não foram exercitadas.
+- **macOS e Windows: medido na fase 8, com limites.** O módulo compila, é instalado pelo
+  instalador e carrega, com a bateria de `native_headless.lua`, num Neovim **0.11.0** em Linux
+  x86_64 e aarch64 (glibc), macOS x86_64 e arm64 (com `-undefined dynamic_lookup`) e Windows
+  x86_64 (V9). **Não foi exercitado:** o Windows aarch64, que só é cross-compilado (nenhum
+  runner o executa, e não há Neovim aarch64 para Windows); musl (cai para o cargo, sem teste de
+  build em Alpine); qualquer Neovim diferente do 0.11.0 nesses sistemas; e a publicação em si
+  (`softprops/action-gh-release`), que só roda em tag.
 - **Detecção de capacidade de terminal não foi implementada nem testada.** A tabela da
   seção 6 descreve um desenho, não algo medido.
 - **A sincronia de scroll não tem protótipo.** É a parte de maior risco não validada.

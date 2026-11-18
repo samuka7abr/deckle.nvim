@@ -377,6 +377,44 @@ Seguindo o caminho do blink.cmp, citado na seção 9 da arquitetura.
 
 **Tag `v0.2.0` sai daqui.**
 
+**Entregue.** Workflow em `.github/workflows/release.yml`, instalador em `lua/deckle/install.lua`.
+O contrato com a fase 7 e a decisão de onde o binário mora estão na seção 9 da arquitetura.
+O que difere do plano acima ou vai além dele:
+
+- **O gate 1 foi provado numa rodada de PR, não numa tag.** `gh workflow run release.yml
+  --ref feat/f8-distribuicao` responde `HTTP 404: workflow release.yml not found on the default
+  branch`: um `workflow_dispatch` de arquivo novo só existe depois de entrar na `main`. O
+  workflow ganhou um gatilho `pull_request` (só em paths que entram no binário), e a matriz
+  rodou por ele. A prova via tag `v0.2.0-rc` fica para depois do merge, e é a única que exercita
+  o job `release` (publicação, conferência de 12 arquivos e dos `.sha256`). Nenhuma tag nem
+  release foi criada nesta fase.
+- **Smoke test do artefato antes de publicar.** Em cada runner nativo, o instalador de verdade
+  instala o artefato de um diretório local (`file://`), `package.loadlib` o carrega pelo caminho
+  de `info()` e roda a bateria de `tests/native/native_headless.lua` (inclusive "erro em Rust não
+  derruba o Neovim"). É o que prova que o `.dylib` do macOS e a `.dll` do Windows carregam num
+  Neovim, e não só que compilam.
+- **Runners.** `macos-13` e `macos-14` não existem mais ("The configuration
+  'macos-14-arm64-us-default' is not supported"). A matriz usa `macos-15-intel` (x86_64) e
+  `macos-15` (arm64). O aarch64 do Windows é cross-compilado no `windows-latest` x64: o mlua usa
+  `raw-dylib` no Windows, então não precisa de import lib, mas um runner x64 não executa aarch64,
+  e esse alvo sai **sem smoke test**.
+- **`vim.fn.sha256` não serve para binário** (`E976: Using a Blob as a String` com byte NUL),
+  então o hash é `lua/deckle/sha256.lua`, em Lua puro: 0,15 s para o `.so` de 10,5 MB, igual ao
+  `sha256sum`, e provado contra os vetores do NIST e contra o `sha256sum` nas bordas de bloco.
+- **Checksum errado não cai para o cargo.** O gate diz "aborta a instalação e cai para a camada
+  0", e foi lido literalmente: um binário que não bate com o hash é evento de integridade, não
+  "sem binário para a plataforma". Falha de download (404, sem rede, sem curl) é que cai para
+  o cargo.
+- **`Cargo.lock` versionado**, e todo build de release usa `--locked`. Era a causa-raiz de V5
+  (cargo resolvendo merman para outra versão sem avisar).
+- **Instalação em `stdpath("data")/deckle/`**, com `install.json` (origem, versão, alvo, SHA-256).
+  Troca por `rename`, nunca escrevendo por cima de um `.so` que um Neovim pode ter mapeado.
+  Binário de versão diferente da do plugin conta como ausente.
+- **Fora da matriz:** Linux com musl (Alpine) é detectado e vai direto para o cargo, porque o
+  `.so` de glibc não carrega lá.
+- **`version.lua` diz `0.2.0` antes de a release `v0.2.0` existir.** Até a tag sair, o download
+  dá 404 e o instalador cai para o cargo, que é o comportamento desenhado.
+
 ---
 
 ## Fase 9 — Camada 2: imagens
@@ -443,7 +481,11 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
   partir do 0.11, mais a guarda do `plugin/deckle.lua`, que se recusa a registrar `:Deckle`
   abaixo do piso e faz todo teste de despacho bater em `E492`. O job saiu da matriz em vez
   de ficar permanentemente vermelho. Fica em **0.11.0**; vira ADR na fase 10.
-- **macOS e Windows.** Nada foi testado. A fase 8 é a primeira que descobre.
+- **macOS e Windows.** ~~Nada foi testado. A fase 8 é a primeira que descobre.~~ **Medido na
+  fase 8**: o módulo compila, instala pelo instalador e carrega num Neovim 0.11.0 de verdade em
+  Linux x86_64 e aarch64, macOS x86_64 e arm64 e Windows x86_64, com as flags de
+  `.cargo/config.toml` no macOS. Windows aarch64 só compila (cross). Ver "Entregue" na fase 8 e
+  V9 em `docs/validation.md`.
 - **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. ~~Reconferir
   na fase 6.~~ **Reconferido na fase 6 (2026-11-17)**: o pin fica, mas já existem `0.8.0` e
   `0.10.0` na crates.io. Subir é um PR próprio; ver ADR-0002.

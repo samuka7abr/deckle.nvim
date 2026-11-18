@@ -87,13 +87,68 @@ local function check_layer()
   health.start("Capability layer")
 
   -- Camada 0 é sempre verdade nesta fase: `deckle.native` não existe ainda, então não há
-  -- o que detectar. Quando a fase 7 entrar, isto vira detecção de verdade.
+  -- o que detectar. Quando a fase 7 entrar, isto vira detecção de verdade. O binário em si
+  -- (de onde veio, onde está) já é reportado na seção "Native binary", logo abaixo.
   health.ok("layer 0 — Markdown preview, no external dependency")
   health.info("mermaid blocks render as plain code blocks on layer 0")
   -- `info`, não `warn`: nada está quebrado e não há nada que o usuário possa fazer a
   -- respeito neste build. O warn fica para a fase 7, quando existir um `.so` que possa
   -- falhar em carregar — aí sim é acionável.
-  health.info("layer 1 (native mermaid) is not available in this build")
+  health.info("layer 1 (native mermaid) is not wired into the render yet")
+end
+
+--- Onde está o binário nativo e de onde veio (fase 8). Só lê o disco: não carrega o `.so`,
+--- que é assunto da fase 7. Com o binário ausente, diz o motivo e o que fazer; é aqui, e não
+--- num erro durante o `:Deckle install`, que a camada 0 aparece.
+local function check_native_binary()
+  health.start("Native binary")
+
+  local config = require("deckle.config")
+  local override = config.options.native.path
+  if override then
+    health.info("`native.path` is set: " .. override)
+  end
+  if not config.options.native.enabled then
+    health.info("`native.enabled` is false — the binary is not loaded")
+  end
+
+  local ok, info = pcall(function()
+    return require("deckle.install").info()
+  end)
+  if not ok then
+    health.warn("could not inspect the installed binary: " .. tostring(info))
+    return
+  end
+
+  if info.origin == "release" then
+    health.ok(
+      string.format(
+        "installed from a release (v%s, %s): %s",
+        info.version or "?",
+        info.target or "?",
+        info.path
+      )
+    )
+  elseif info.origin == "build" then
+    health.ok(string.format("built locally (%s): %s", info.source or "cargo", info.path))
+  else
+    health.info("missing — " .. (info.reason or "not installed"))
+    health.info("mermaid blocks render as plain code blocks until a binary is installed")
+    local advice = {
+      "run `:Deckle install` (downloads the release binary, falls back to `cargo build`)",
+      "or run `make native` in the plugin directory (needs cargo)",
+    }
+    if info.last_error then
+      health.warn("the last install attempt failed: " .. info.last_error, advice)
+    else
+      health.info("to install it: " .. advice[1] .. "; " .. advice[2])
+    end
+    return
+  end
+
+  if info.last_error then
+    health.info("a later install attempt failed: " .. info.last_error)
+  end
 end
 
 function M.check()
@@ -101,6 +156,7 @@ function M.check()
   check_parsers()
   check_config()
   check_layer()
+  check_native_binary()
 end
 
 return M

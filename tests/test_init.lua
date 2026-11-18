@@ -51,7 +51,7 @@ T["completion"] = new_set()
 T["completion"]["lista todos os subcomandos, na ordem"] = function()
   eq(
     child.lua_get([[require("deckle").complete("", "Deckle ")]]),
-    { "open", "close", "toggle", "refresh", "health" }
+    { "open", "close", "toggle", "refresh", "health", "install" }
   )
 end
 

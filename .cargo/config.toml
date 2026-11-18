@@ -1,0 +1,16 @@
+# Flags de link do módulo Lua no macOS. Ver docs/architecture.md, seção 12.
+#
+# O `.dylib` do crate é um módulo Lua: os símbolos `lua_*` não vêm de uma biblioteca em
+# tempo de link, o Neovim os fornece quando faz o `dlopen`. O ld64 recusa símbolo
+# indefinido numa dylib a não ser que seja avisado, e este é o aviso. No Linux o ld aceita
+# símbolo indefinido numa biblioteca compartilhada, e no Windows o mlua usa `raw-dylib`
+# (importa de `lua51.dll`), então só o macOS precisa disto.
+#
+# Atenção: a variável de ambiente `RUSTFLAGS` SUBSTITUI estas flags em vez de somar. Quem
+# compila no macOS com `RUSTFLAGS` definido precisa repeti-las.
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

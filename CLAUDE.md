@@ -4,9 +4,12 @@ Preview de Markdown num buffer separado somente-leitura dentro do Neovim. Lua fa
 encosta na API do editor. Um `.so` opcional em Rust (via mlua) renderiza Mermaid em arte de
 texto usando o crate `merman`.
 
-**Estado: fases 0, 1, 2 e 6 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
-`parse`, `preview`, `highlight` e `render/` com um módulo por tipo de bloco), `plugin/deckle.lua`,
-`tests/` (mini.test), `scripts/test.sh`, o crate `crates/deckle-native/` com `Makefile`, e a CI.
+**Estado: fases 0, 1, 2, 6 e 8 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
+`parse`, `preview`, `highlight`, `install`, `sha256`, `version` e `render/` com um módulo por
+tipo de bloco), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
+`crates/deckle-native/` com `Makefile`, a CI e o workflow de release.
+`require("deckle.install").info()` diz onde está o binário nativo e de onde veio, e é o que a
+fase 7 consome.
 `:Deckle open|close|toggle|refresh` funcionam: o render de texto e o buffer de preview estão
 prontos. `code`, `table` e `html` saem como texto cru (fallbacks de `render/code.lua`,
 `render/table.lua` e `render/html.lua`; as fases 4 e 5 trocam a implementação), e não existe
@@ -65,6 +68,20 @@ suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir e
 
 - O cargo gera `libdeckle_native.so`, mas o `require` do Lua só acha `deckle_native.so`. O
   prefixo `lib` some na instalação.
+- No macOS o cargo gera `libdeckle_native.dylib`, mas o `package.cpath` do LuaJIT só procura
+  `.so`: o binário se instala como `deckle_native.so` lá também (no Windows, `deckle_native.dll`,
+  sem prefixo `lib`). O módulo exige `-undefined dynamic_lookup` no link, que vem de
+  `.cargo/config.toml`; a variável `RUSTFLAGS` substitui essas flags em vez de somar.
+- `vim.fn.sha256` **não serve para binário**: com byte NUL responde `E976: Using a Blob as a
+  String`. O hash do instalador é `lua/deckle/sha256.lua`, em Lua puro.
+- Nunca escreva por cima de um `.so` em uso: truncar o arquivo mapeado por um Neovim em
+  execução derruba o processo. O instalador grava em temporário e troca por `rename`.
+- Checksum que não bate aborta a instalação e **não** cai para o cargo. É decisão de
+  integridade, e tem teste.
+- `lua/deckle/version.lua` é a única fonte da versão do plugin, e a tag da release precisa
+  bater com ela (o `release.yml` confere). O instalador monta a URL `v<versão>` a partir dela.
+- O `Cargo.lock` é versionado (o crate gera binário distribuído) e todo build de release usa
+  `--locked`: é o que impede o cargo de resolver o merman para outra versão sem avisar.
 - Um `.so` velho no lugar faz o teste passar com `attempt to call a nil value`, que parece
   sucesso e não é. Trave o script se o build falhar. Aconteceu duas vezes durante a validação.
 - Sempre confira o exit code do `nvim --headless`. **134 é abort**, não falha de teste.

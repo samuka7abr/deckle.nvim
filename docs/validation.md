@@ -288,6 +288,51 @@ Neovim 0.11.0, 0.11.5 e nightly (0.13.0-dev), com resultado idêntico nos três:
 
 ---
 
+## V9 — Distribuição: o módulo carrega em cinco dos seis alvos (fase 8)
+
+**Por quê importa:** a seção 12 admitia que macOS e Windows nunca tinham sido testados, e o
+`-undefined dynamic_lookup` do macOS era o risco declarado da fase 8.
+
+Rodada do `release.yml` no PR da fase 8, em runners do GitHub, Neovim 0.11.0, rustc 1.95.0, com
+`cargo build --release --locked`. Em cada alvo marcado "sim", o smoke test
+(`tests/native/install_smoke.lua`) instalou o artefato pelo instalador de verdade (`file://`,
+checksum conferido), carregou por `package.loadlib` no caminho de `info()` e passou toda a
+bateria de `native_headless.lua`, inclusive "erro em Rust não derruba o processo".
+
+| Alvo | Runner | Compila | Carrega no Neovim |
+|---|---|---|---|
+| `x86_64-unknown-linux-gnu` | ubuntu-24.04 | sim | sim |
+| `aarch64-unknown-linux-gnu` | ubuntu-24.04-arm | sim | sim |
+| `x86_64-apple-darwin` | macos-15-intel | sim | sim |
+| `aarch64-apple-darwin` | macos-15 | sim | sim |
+| `x86_64-pc-windows-msvc` | windows-latest | sim | sim |
+| `aarch64-pc-windows-msvc` | windows-latest (cross) | sim | **não testado** |
+
+Achados:
+
+- **macOS:** as flags de `.cargo/config.toml` bastam. O `.dylib` carrega se for instalado como
+  `deckle_native.so`; o `package.cpath` do LuaJIT não procura `.dylib`.
+- **Windows:** o mlua com `module` usa `raw-dylib` e importa de `lua51.dll`
+  (`mlua-sys` 0.10.0, `build/main_inner.rs`), então não precisa de import lib. Carregou no
+  `nvim.exe` oficial 0.11.0 sem nenhum ajuste. O aarch64 compila por cross-target pelo mesmo
+  caminho, mas não há como executá-lo na CI.
+- **Runners:** `macos-13` e `macos-14` não existem mais ("The configuration
+  'macos-14-arm64-us-default' is not supported"). Tempo de compilação sem cache: Linux 2 a 3 min,
+  Windows ~3 min, macOS x86_64 ~8 min.
+- **`vim.fn.sha256` não aceita binário:** `E976: Using a Blob as a String` com byte NUL
+  (Neovim 0.11.5). O hash do instalador é `lua/deckle/sha256.lua`, em Lua puro: 10,5 MB em
+  0,15 s, o mesmo que o `sha256sum`, com o mesmo resultado.
+- **Publicação:** os 12 arquivos baixados da rodada (6 binários e 6 `.sha256`) passam em
+  `sha256sum -c`, que é a conferência que o job `release` faz antes de publicar. O próprio
+  job `release` só roda em tag e não foi exercitado.
+
+**Não foi medido:** Neovim diferente do 0.11.0 nos runners; Alpine (musl); o tempo de download
+em rede lenta. O `.so` de Linux x86_64 tem 10,5 MB (build local); no workflow, os artefatos
+saem compactados com 4,0 a 4,5 MB, e o tamanho de cada binário descompactado nos outros alvos
+não foi registrado.
+
+---
+
 ## Como reproduzir
 
 Os spikes vivem em `/tmp` e são descartáveis. Para refazer:
