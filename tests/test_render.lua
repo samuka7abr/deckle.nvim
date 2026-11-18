@@ -835,7 +835,7 @@ T["highlights"]["todo grupo definido é default, para o esquema do usuário venc
 end
 
 -- ---------------------------------------------------------------------------------------
--- Fallbacks de code, table e html (fases 4 e 5 trocam os módulos)
+-- Fallback de html (code e table têm teste próprio, em test_code.lua e test_table.lua)
 -- ---------------------------------------------------------------------------------------
 
 T["fallbacks"] = new_set()
