@@ -3,6 +3,7 @@
 #   make native         compila o crate e instala lua/deckle_native.<ext>
 #   make bench          benchmark do flowchart (V5), em release
 #   make check-merman   falha se o merman resolver para versao diferente da pinada
+#   make dump FILE=x    desenha um .mmd e imprime a arte (depuracao)
 #
 # Linux, macOS e Windows (via MSYS2/Git Bash). Quem nao quer compilar usa `:Deckle install`,
 # que baixa o binario da release e so cai para o cargo se nao houver um para a plataforma.
@@ -26,7 +27,7 @@ else
   INSTALLED  := lua/deckle_native.so
 endif
 
-.PHONY: native bench check-merman
+.PHONY: native bench check-merman dump
 
 # O binario antigo e removido ANTES do build: um binario velho no lugar faz o teste "passar"
 # com `attempt to call a nil value`, que parece sucesso e nao e (aconteceu duas vezes na
@@ -44,3 +45,10 @@ bench:
 
 check-merman:
 	./scripts/check-merman-version.sh
+
+# Desenha um arquivo .mmd com o mesmo caminho do plugin (fallback incluido) e imprime a arte:
+#   make dump FILE=examples/x.mmd [WIDTH=100] [ASCII=1]
+dump:
+	@test -n "$(FILE)" || { echo "uso: make dump FILE=caminho.mmd [WIDTH=100] [ASCII=1]" >&2; exit 1; }
+	DECKLE_DUMP="$(abspath $(FILE))" DECKLE_DUMP_WIDTH="$(or $(WIDTH),100)" DECKLE_DUMP_ASCII="$(ASCII)" \
+	  $(CARGO) test -q -p deckle-native -- --ignored --nocapture dump_file
