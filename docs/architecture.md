@@ -156,6 +156,12 @@ Isso é o oposto da abordagem usual, que trata gráficos de terminal como o cami
 A camada 0 existe porque `require` de um `.so` ausente falha de forma capturável
 (validado), então o plugin carrega e funciona mesmo sem binário nenhum.
 
+Na fase 9 a camada 2 passou a existir para o protocolo do kitty (também o do ghostty): `caps.lua`
+detecta (na dúvida, sem gráfico: tmux sem `allow-passthrough` confirmado, SSH e terminal burro
+ficam em texto) e `image/` desenha por Unicode placeholders, de modo que a imagem rola com o
+buffer sem nenhum código de reposicionamento. iTerm2 e sixel são detectados e seguem em texto
+alternativo. O detalhe e o que não foi medido estão no roadmap (fase 9) e na seção 12.
+
 ## 7. Sincronização de scroll
 
 É o custo do buffer separado, e o único problema arquitetural sem solução pronta.
@@ -185,7 +191,8 @@ deckle.nvim/
 │   ├── install.lua       baixa/compila o .so, confere SHA-256, registra a origem
 │   ├── sha256.lua        SHA-256 em Lua puro (vim.fn.sha256 não serve para binário)
 │   ├── version.lua       versão do plugin: monta a URL da release
-│   ├── caps.lua          detecção de capacidade de terminal
+│   ├── caps.lua          detecção de capacidade de terminal (pura, sobre uma tabela de ambiente)
+│   ├── image/            imagens da camada 2: estado e escrita (init), protocolo kitty, cabeçalho PNG
 │   └── health.lua        :checkhealth deckle
 ├── crates/deckle-native/ cdylib mlua → merman
 └── doc/deckle.txt        :help
@@ -258,8 +265,19 @@ Honestidade sobre os limites da validação:
   runner o executa, e não há Neovim aarch64 para Windows); musl (cai para o cargo, sem teste de
   build em Alpine); qualquer Neovim diferente do 0.11.0 nesses sistemas; e a publicação em si
   (`softprops/action-gh-release`), que só roda em tag.
-- **Detecção de capacidade de terminal não foi implementada nem testada.** A tabela da
-  seção 6 descreve um desenho, não algo medido.
+- **Detecção de capacidade de terminal: implementada na fase 9 (`lua/deckle/caps.lua`) e
+  testada com ambientes forjados** (kitty, ghostty, WezTerm, iTerm2, sixel, tmux mentindo, SSH,
+  GNU screen, terminal burro), e a consulta do `allow-passthrough` do tmux com um `tmux` falso no
+  PATH. **Não foi medida em terminal real nem em tmux real.** As variáveis que ela lê
+  (`KITTY_WINDOW_ID`, `GHOSTTY_*`, `WEZTERM_*`, `LC_TERMINAL`...) são as que cada terminal
+  documenta, mas dentro do tmux podem estar velhas (o tmux guarda o ambiente de quem o iniciou),
+  e é por isso que a detecção só confia nelas com `allow-passthrough` confirmado.
+- **As imagens (camada 2) só foram verificadas até o tty.** Só o protocolo do kitty é desenhado
+  (Unicode placeholders). Num Neovim com TUI dentro de um pty, o plugin escreve os escapes
+  certos e o Neovim emite as células de placeholder com o id na cor. **Nenhum terminal gráfico de
+  verdade abriu uma imagem do deckle**: kitty, ghostty e o repasse do tmux estão sem medida, e a
+  proporção depende de uma célula suposta de 10 x 20 pixels. iTerm2 e sixel são detectados e
+  caem em texto alternativo.
 - **A sincronia de scroll não tem protótipo.** É a parte de maior risco não validada.
 - **O comportamento de `merman` sob entrada malformada não foi explorado a fundo** —
   testei o caminho feliz e o tipo não suportado, não fuzzing.
