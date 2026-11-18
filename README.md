@@ -8,10 +8,11 @@ Sem browser, sem servidor web, sem webview.
 
 ## Estado
 
-**Fases 0, 1, 2 e 6 do [roadmap](docs/roadmap.md).** Existe o esqueleto — `:Deckle` com
+**Fases 0, 1, 2, 6 e 8 do [roadmap](docs/roadmap.md).** Existe o esqueleto — `:Deckle` com
 subcomandos, configuração validada, `:checkhealth deckle`, suíte de testes e CI — o parser
 (`lua/deckle/parse.lua`, Markdown para IR via treesitter, com a forma do IR documentada no
-topo do módulo), o crate Rust `deckle-native` e, desde a fase 2, o preview: `:Deckle open`
+topo do módulo), o crate Rust `deckle-native`, a distribuição do binário dele (release por
+plataforma, `:Deckle install`) e, desde a fase 2, o preview: `:Deckle open`
 abre um buffer somente-leitura ao lado, com títulos, parágrafos com wrap por largura de
 display (emoji e CJK incluídos), listas, citações e regras, re-renderizado com debounce quando
 o fonte muda e quando a janela é redimensionada.
@@ -46,11 +47,79 @@ Componente nativo (Rust 1.95, instalado pelo `rustup` a partir do `rust-toolchai
 
 ```sh
 cargo test                  # lógica pura, sem Neovim: os 14 tipos de diagrama, erros, guardas
-make native                 # compila e instala lua/deckle_native.so (falha se o build falhar)
+make native                 # compila e instala lua/deckle_native.<ext> (falha se o build falhar)
 ./scripts/test-native.sh    # make native + teste headless no nvim (exit 0 = sobreviveu)
 make bench                  # benchmark do flowchart
 make check-merman           # falha se o merman resolver para versão diferente da pinada
 ```
+
+## Instalação
+
+O plugin só precisa do Neovim 0.11 ou mais novo, e roda inteiro na camada 0. O binário
+nativo (camada 1, o Mermaid renderizado) é opcional, e há dois jeitos de ter um.
+
+### lazy.nvim
+
+```lua
+{
+  "samuka7abr/deckle.nvim",
+  cmd = "Deckle",
+  -- Baixa o binário da release. Alternativa, que compila na hora e precisa de cargo e make:
+  --   build = "make native",
+  build = ":Deckle install",
+  opts = {},
+}
+```
+
+`:Deckle install` segue três degraus e o plugin funciona em qualquer um deles:
+
+1. baixa `deckle_native-<alvo>.<ext>` da release `v<versão>` do GitHub (via `curl`), confere o
+   SHA-256 do arquivo `.sha256` ao lado e instala;
+2. se não há binário para a plataforma (ou não há rede), roda `cargo build --release` no
+   próprio plugin. O `rustup` baixa a toolchain 1.95 sozinho, a partir do
+   `rust-toolchain.toml`, e o `Cargo.lock` versionado mantém o merman na versão pinada;
+3. se as duas falham, fica na camada 0: uma linha discreta no `:messages` e o motivo no
+   `:checkhealth deckle`. Nenhum erro.
+
+**Checksum errado é a exceção:** a instalação aborta e **não** tenta o cargo, porque um
+binário que não bate com o hash publicado é um problema de integridade, não "não havia
+binário". O plugin fica na camada 0 e o `:checkhealth deckle` mostra a divergência. O hash
+vem do mesmo lugar que o binário, então isto protege de download corrompido e de CDN com
+arquivo trocado, não de um repositório comprometido; não é assinatura.
+
+O comando é assíncrono: o gerenciador considera o `build` concluído quando ele volta, e o
+resultado chega por `vim.notify` e pelo checkhealth. Sem editor aberto (CI, Nix):
+
+```sh
+nvim --headless -c 'lua require("deckle.install").install(nil, function() vim.cmd("qa") end)'
+```
+
+### Onde o binário fica
+
+Em `stdpath("data")/deckle/` (`~/.local/share/nvim/deckle/` no Linux), com um `install.json`
+dizendo de onde veio (`release` ou `build`), para qual versão do plugin e o SHA-256. Não
+dentro do diretório do plugin, porque o gerenciador o apaga e o recria (`lazy clean`,
+reinstalação) ou o deixa somente-leitura (Nix), e porque assim o binário não suja o
+checkout. O custo é que atualizar o plugin não atualiza o binário: o instalador compara a
+versão gravada com `lua/deckle/version.lua` e um binário de outra versão conta como ausente.
+Rode `:Deckle install` de novo depois de atualizar (o `build` do lazy faz isso sozinho).
+
+O `make native` é o caminho de quem desenvolve: deixa `lua/deckle_native.<ext>` dentro do
+plugin, que tem precedência sobre o diretório de dados.
+
+### Alvos
+
+| Alvo | Arquivo na release | Instalado como |
+|---|---|---|
+| `x86_64-unknown-linux-gnu` | `deckle_native-x86_64-unknown-linux-gnu.so` | `deckle_native.so` |
+| `aarch64-unknown-linux-gnu` | `deckle_native-aarch64-unknown-linux-gnu.so` | `deckle_native.so` |
+| `x86_64-apple-darwin` | `deckle_native-x86_64-apple-darwin.dylib` | `deckle_native.so` |
+| `aarch64-apple-darwin` | `deckle_native-aarch64-apple-darwin.dylib` | `deckle_native.so` |
+| `x86_64-pc-windows-msvc` | `deckle_native-x86_64-pc-windows-msvc.dll` | `deckle_native.dll` |
+| `aarch64-pc-windows-msvc` | `deckle_native-aarch64-pc-windows-msvc.dll` | `deckle_native.dll` |
+
+Linux com musl (Alpine) não tem binário: o `.so` de glibc não carrega lá, e o instalador vai
+direto para o cargo.
 
 ## Como funciona
 
