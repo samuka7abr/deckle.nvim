@@ -310,6 +310,77 @@ T["gate 5: o mesmo diagrama em Unicode tem byte fora do ASCII (o caso acima não
 )
 
 -- ---------------------------------------------------------------------------------------
+-- Fallback de achatamento (V11): os diagramas reais do usuário (ILZA)
+-- ---------------------------------------------------------------------------------------
+
+local SIMPLIFIED = "mermaid: layout simplified (subgraphs flattened)"
+
+---@param name string
+---@return string[] o bloco mermaid com o fixture dentro
+local function ilza(name)
+  local src = vim.fn.readfile(repo_root .. "/crates/deckle-native/tests/fixtures/" .. name)
+  return vim.list_extend(vim.list_extend({ "```mermaid" }, src), { "```" })
+end
+
+T["fallback: os dois diagramas do ILZA saem desenhados, com a nota de simplificação"] = native_case(
+  function()
+    open_preview(doc({ "# Título" }, ilza("ilza_architecture.mmd"), ilza("ilza_modules.mmd")))
+    local lines = preview_lines()
+
+    -- Os dois são arte (rótulos dos nós, borda), e nenhum caiu para código.
+    eq(has(lines, "Frontend"), true)
+    eq(has(lines, "TriageAgent"), true)
+    eq(has(lines, "┌"), true)
+    eq(has(lines, "flowchart TB"), false)
+    eq(has(lines, "subgraph "), false) -- a nota diz `subgraphs`, e o fonte diz `subgraph X`
+    eq(has(lines, "mermaid: parse error"), false)
+    eq(has(lines, "mermaid: unsupported"), false)
+
+    -- Uma nota por diagrama, a de simplificação, e nada mais.
+    local notes = child.lua_get(
+      [[vim.tbl_filter(function(l) return l:find("mermaid:", 1, true) end, _G.preview_text())]]
+    )
+    eq(notes, { SIMPLIFIED, SIMPLIFIED })
+
+    -- A nota é `DeckleCodeNote` e o desenho segue com `DeckleMermaid`.
+    local groups = preview_groups()
+    eq(vim.tbl_contains(groups, "DeckleMermaid"), true)
+    eq(vim.tbl_contains(groups, "DeckleCodeNote"), true)
+    eq(vim.tbl_contains(groups, "DeckleError"), false)
+  end
+)
+
+T["fallback: um diagrama que o merman roteia direto não ganha nota"] = native_case(function()
+  open_preview(doc({
+    "```mermaid",
+    "flowchart TB",
+    "  subgraph API",
+    "    h1[h1]",
+    "  end",
+    "  subgraph Temporal",
+    "    t1[t1]",
+    "    t2[t2]",
+    "  end",
+    "  API --> t2",
+    "```",
+  }))
+  local lines = preview_lines()
+  eq(has(lines, "Temporal"), true)
+  eq(has(lines, "mermaid:"), false)
+end)
+
+T["fallback: a segunda abertura vem do cache e a nota continua lá"] = native_case(function()
+  open_preview(doc(ilza("ilza_modules.mmd")))
+  eq(child.lua_get("_G.stats().misses"), 1)
+  local drawn = preview_lines()
+  child.cmd("Deckle close")
+  child.cmd("Deckle open")
+  eq(child.lua_get("_G.stats().hits"), 1)
+  eq(preview_lines(), drawn)
+  eq(drawn[#drawn], SIMPLIFIED)
+end)
+
+-- ---------------------------------------------------------------------------------------
 -- Largura
 -- ---------------------------------------------------------------------------------------
 

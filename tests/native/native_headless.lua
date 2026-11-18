@@ -119,6 +119,53 @@ expect_error("unknown diagram_ty", function()
   native.render("flowchart TD\n  A --> B", { diagram_ty = "nope" })
 end, "nope")
 
+-- 3b. `render_ex`: as mesmas linhas, mais o que o fallback de achatamento simplificou.
+check("exports render_ex", type(native.render_ex) == "function")
+
+local fiel = native.render_ex("flowchart TD\n  A --> B", { width = 80 })
+check("render_ex returns a table with lines", type(fiel) == "table" and #fiel.lines > 3)
+check("render_ex of a faithful drawing has no simplified", fiel.simplified == nil, fiel.simplified)
+check("render_ex lines equal render lines", vim.deep_equal(fiel.lines, no_opts))
+
+-- A menor aresta que o merman 0.8.0 nao roteia (V11): sai achatada, e o resultado diz isso.
+local FALHA = table.concat({
+  "flowchart TB",
+  "  subgraph API",
+  "    h1[h1]",
+  "  end",
+  "  subgraph Temporal",
+  "    t1[t1]",
+  "    t2[t2]",
+  "  end",
+  "  API --> t1",
+}, "\n")
+local achatado = native.render_ex(FALHA, { width = 80 })
+check(
+  "render_ex flattens a routing failure",
+  achatado.simplified == "subgraphs",
+  achatado.simplified
+)
+check(
+  "render_ex says why",
+  type(achatado.cause) == "string" and achatado.cause:find("routes crossing", 1, true) ~= nil,
+  achatado.cause
+)
+check(
+  "render_ex flattened drawing has the nodes",
+  table.concat(achatado.lines, "\n"):find("t2", 1, true) ~= nil
+)
+check(
+  "render also draws it (same lines)",
+  vim.deep_equal(native.render(FALHA, { width = 80 }), achatado.lines)
+)
+
+expect_error("render_ex malformed source", function()
+  native.render_ex("flowchart TD\n  A -->", { width = 80 })
+end, "mermaid parse error")
+expect_error("render_ex source of the wrong type", function()
+  native.render_ex(nil, {})
+end, "src must be a string")
+
 -- 4. O modulo continua utilizavel depois de varios erros.
 local after = native.render("flowchart TD\n  X --> Y", { width = 80 })
 check("render still works after errors", type(after) == "table" and #after > 3)
