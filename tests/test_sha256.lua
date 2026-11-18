@@ -111,7 +111,7 @@ T["um binário de 10 MB não trava o instalador"] = function()
   local hash = sha256.hex(data)
   local seconds = (vim.uv.hrtime() - started) / 1e9
   eq(#hash, 64)
-  -- Medido em ~0.3 s no JIT; o limite é folgado para CI lenta, e só pega regressão de ordem
+  -- Medido em ~0.15 s no JIT; o limite é folgado para CI lenta, e só pega regressão de ordem
   -- de grandeza (por exemplo, o JIT desligado por um laço que ele não compila).
   eq(seconds < 15, true)
 end

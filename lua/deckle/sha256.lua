@@ -7,7 +7,8 @@
 --- qualquer plataforma, é mais fácil de provar do que três ferramentas que não dá para
 --- exercitar numa máquina só.
 ---
---- O custo é medido no teste: o `.so` de ~10 MB leva poucos décimos de segundo no JIT.
+--- O custo foi medido: o `.so` de 10,5 MB leva ~0,15 s no JIT do Neovim 0.11.5, o mesmo que o
+--- `sha256sum` na mesma máquina, e o hash bate com o dele.
 
 local bit = require("bit")
 
