@@ -271,6 +271,53 @@ horizontal nesta fase.
 2. Célula vazia, linha com número errado de células, tabela sem corpo: nada disso lança.
 3. Alinhamento à esquerda, centro e direita, cada um com teste.
 
+**Entregue.** `render/table.lua` substitui o fallback de texto cru, com o mesmo nome e a mesma
+assinatura (`render(block, ctx) -> lines, marks`). O contrato e as regras de layout estão no
+topo do módulo; os testes, em `tests/test_table.lua` (os três testes do fallback saíram de
+`tests/test_render.lua`). O que difere do esboço acima ou vai além:
+
+- **Layout.** Grade completa (`┌─┬┐│├┼┤└┴┘`; `+-|` em ASCII), um espaço de cada lado do conteúdo
+  e uma linha de grade só depois do cabeçalho, sem separador entre linhas do corpo. Tabela
+  **sem corpo** não tem a linha de grade: o cabeçalho fecha direto na borda de baixo. A tabela
+  ocupa só o que precisa e nunca é esticada até `ctx.width`.
+- **Alinhamento** vale para o cabeçalho também. No centro, a célula que sobra por ser ímpar
+  fica à direita.
+- **Linhas tortas.** O número de colunas é `#header`. Linha curta é completada com células
+  vazias; linha com **mais** células perde as extras (sem coluna nem cabeçalho, como no GFM).
+- **Truncamento.** A coluna mais larga é cortada com reticências até caber, o que na prática
+  nivela as colunas largas num mesmo teto (achado por busca binária, não célula a célula: uma
+  célula de 1 MB não custa um milhão de voltas). A sobra de divisão inexata vai para as colunas
+  da esquerda. O corte é por cluster de grafemas, então CJK, emoji e sequência com ZWJ nunca
+  são partidos. Um estilo que atravessa o corte (negrito) continua nas reticências.
+- **Piso e transbordo.** Uma coluna não encolhe abaixo da largura das reticências (1 célula em
+  unicode, 3 em ASCII). Com colunas demais para a janela, a tabela **transborda** `ctx.width`,
+  como o código: o preview não quebra linha. Não há scroll horizontal próprio.
+- **Marcas.** `DeckleTableBorder` em cada glifo de borda e `DeckleTableHeader` em cada célula do
+  cabeçalho (com o recuo), ambos em `lua/deckle/highlight.lua`, `default = true`, linkados a
+  `Comment` e `Title`. O do cabeçalho tem `priority = 4000`, abaixo do padrão do extmark, para o
+  link ou o código dentro do cabeçalho não perderem a cor. Os spans inline da célula passam por
+  `render/inline.lua` (largura infinita) e as marcas saem em bytes, deslocadas para depois do
+  recuo do alinhamento.
+- **Desvio da regra 6 do CLAUDE.md.** A largura de uma célula é `vim.api.nvim_strwidth`, não
+  `vim.fn.strdisplaywidth`. `strdisplaywidth` mede na **janela atual** e, com `wrap` ligado, soma
+  uma célula quando um caractere largo cai na última coluna dela. Uma célula de CJK mais larga que
+  a janela de quem chamou o render saía maior do que o preview (sem `wrap`) desenha, e a linha da
+  tabela ficava curta. `nvim_strwidth` é a mesma medida (emoji, `ambiwidth`, combinantes) sem a
+  janela. Há teste de regressão. Os testes de tabela estreita conferem também o
+  `strdisplaywidth` direto; os de tabela larga somam por cluster, pelo mesmo motivo.
+- **`ambiwidth=double`.** Os caracteres de caixa medem duas células nessa configuração (comum em
+  locale CJK) e as colunas não alinhariam. Se algum glifo de borda não mede uma célula, a tabela
+  usa as bordas ASCII, mesmo com `charset = "unicode"`. Há teste que força o `ambiwidth`.
+- **Achado no parser, não corrigido.** O treesitter-markdown não reconhece como linha uma linha
+  **final** só de células vazias (`|  |  |` no fim da tabela): devolve um nó `ERROR`, e o
+  `parse.lua` o trata como parágrafo cru junto com a linha anterior. O render só vê o IR que o
+  parser entrega, então o caso (linha final vazia) é coberto por IR montado à mão. Uma linha
+  vazia no meio da tabela funciona. Fica para quem mexer na fase 1.
+- **Não foi validado:** a tabela num terminal de verdade (os testes são headless e medem com o
+  Neovim, não com a fonte do terminal: emoji que o terminal desenha com largura diferente da
+  tabela do Neovim desalinham do mesmo jeito que em qualquer plugin), a tabela dentro de lista
+  profunda em janela estreita, e o `ambiwidth=double` num terminal real.
+
 ---
 
 ## Fase 5 — Code blocks com highlight
