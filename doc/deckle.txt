@@ -1,0 +1,749 @@
+*deckle.txt*   Preview de Markdown num buffer separado, dentro do Neovim
+
+                              deckle.nvim
+
+==============================================================================
+CONTEÚDO                                                     *deckle-contents*
+
+ 1. Introdução .......................... |deckle-introduction|
+ 2. Requisitos .......................... |deckle-requirements|
+ 3. Instalação .......................... |deckle-install|
+ 4. Comandos ............................ |deckle-commands|
+ 5. O que o preview mostra .............. |deckle-rendering|
+ 6. Configuração ........................ |deckle-config|
+ 7. Camadas de degradação ............... |deckle-layers|
+ 8. Mermaid e o binário nativo .......... |deckle-mermaid|
+ 9. Imagens ............................. |deckle-images|
+10. Sincronia de scroll ................. |deckle-sync|
+11. Highlights .......................... |deckle-highlights|
+12. Eventos e API em Lua ................ |deckle-api|
+13. Checkhealth ......................... |deckle-health|
+14. Limitações conhecidas ............... |deckle-limitations|
+
+==============================================================================
+1. INTRODUÇÃO                     *deckle-introduction* *deckle* *deckle.nvim*
+
+O deckle mostra o preview de um arquivo Markdown num buffer separado e
+somente-leitura, ao lado do fonte. Sem browser, sem servidor web, sem webview.
+É o modelo do painel de preview do Zed, e não o dos plugins que decoram o
+próprio buffer no lugar.
+
+Tudo que encosta no Neovim é Lua. Um módulo nativo opcional, escrito em Rust,
+desenha diagramas Mermaid como arte de texto. Sem ele o plugin inteiro
+funciona, e só o Mermaid aparece como código.
+
+Princípios:
+
+- Nenhuma dependência obrigatória além do Neovim. Os parsers `markdown` e
+  `markdown_inline` vêm do próprio Neovim, sem o nvim-treesitter.
+- O buffer fonte é intocável: nenhum extmark, nenhum conceal, nenhuma opção.
+  Todo render vai para o buffer de preview.
+- Degradação por feature, não do plugin. Cada capacidade extra é detectada em
+  tempo de execução, e a falta dela piora o resultado sem quebrar nada
+  (|deckle-layers|).
+- Um bloco que não pode ser desenhado degrada só aquele bloco. Um diagrama
+  malformado nunca derruba a sessão.
+
+Fora de escopo, de propósito: editar vendo o render ao lado no mesmo texto
+(para isso existem o markview.nvim e o render-markdown.nvim), exportar para
+HTML ou PDF, LaTeX, e qualquer servidor ou browser.
+
+==============================================================================
+2. REQUISITOS                                            *deckle-requirements*
+
+- Neovim 0.11.0 ou mais novo. É a única versão medida: o Neovim 0.10.4
+  reprovou 20 dos 39 casos da suíte na CI da fase 0, porque `vim.validate()`
+  com a assinatura nova só existe a partir do 0.11. Abaixo do piso o
+  `plugin/deckle.lua` não registra `:Deckle` e avisa
+  `deckle.nvim requires Neovim 0.11.0 or newer`. A decisão está no ADR-0005
+  (docs/adr/0005-piso-neovim-0-11.md).
+- Os parsers `markdown` e `markdown_inline`, que vêm com o Neovim.
+
+Opcionais, nenhum deles é necessário para o preview funcionar:
+
+- Para o Mermaid renderizado: o binário `deckle_native`, baixado por
+  `:Deckle install` (precisa de `curl`) ou compilado (precisa de `cargo`
+  e `make`; o `rustup` baixa a toolchain 1.95 sozinho).
+- Para colorir blocos de código: o parser treesitter da linguagem do bloco.
+  Os de `lua`, `c` e `vim` vêm com o Neovim.
+- Para imagens de verdade: um terminal kitty ou ghostty (|deckle-images|).
+
+==============================================================================
+3. INSTALAÇÃO                                                 *deckle-install*
+
+lazy.nvim: >lua
+    {
+      "samuka7abr/deckle.nvim",
+      cmd = "Deckle",
+      -- Baixa o binário da release. Alternativa, que compila na hora:
+      --   build = "make native",
+      build = ":Deckle install",
+      opts = {},
+    }
+<
+packer.nvim: >lua
+    use({
+      "samuka7abr/deckle.nvim",
+      cmd = "Deckle",
+      run = ":Deckle install", -- ou: run = "make native"
+      config = function()
+        require("deckle").setup()
+      end,
+    })
+<
+`setup()` é opcional: sem ele valem os valores de fábrica (|deckle-config|).
+Carregar o plugin só registra o comando `:Deckle`; o resto é carregado
+quando um subcomando roda ou quando `setup()` é chamado.
+
+                                                       *deckle-native-install*
+O binário nativo (camada 1) tem três degraus, e o plugin funciona em qualquer
+um deles. `:Deckle install` percorre os três, nesta ordem:
+
+1. Baixa `deckle_native-<alvo>.<ext>` da release `v<versão>` do GitHub (por
+   `curl`), confere o SHA-256 do arquivo `.sha256` ao lado e instala.
+2. Se não há binário para a plataforma (ou não há rede, ou a release ainda não
+   existe), roda `cargo build --release --locked` no próprio plugin. O
+   `Cargo.lock` versionado mantém o merman na versão pinada.
+3. Se as duas falham, fica na camada 0: uma linha discreta em |:messages| e o
+   motivo em `:checkhealth deckle`. Nenhum erro.
+
+Checksum que não bate é a exceção: a instalação aborta e não tenta o cargo,
+porque um binário que não bate com o hash publicado é um problema de
+integridade, não "não havia binário". O hash vem do mesmo lugar que o
+binário, então isto protege de download corrompido e de CDN com arquivo
+trocado, não de um repositório comprometido: não é assinatura.
+
+O comando é assíncrono. O resultado chega por |vim.notify()| e pelo
+checkhealth, e o binário só é carregado na próxima sessão: reinicie o Neovim.
+Sem editor aberto (CI, Nix): >
+    nvim --headless -c 'lua require("deckle.install").install(nil,
+      function() vim.cmd("qa") end)'
+<
+Onde o binário fica: em `stdpath("data")/deckle/` (veja |stdpath()|;
+`~/.local/share/nvim/deckle/` no Linux), com um `install.json` que diz de onde
+veio (`release` ou `build`), para qual versão do plugin e o SHA-256. Não fica
+dentro do diretório do plugin, porque o gerenciador o apaga e recria, ou o
+deixa somente-leitura (Nix). O custo é que atualizar o plugin não atualiza o
+binário: um binário de outra versão conta como ausente. Rode `:Deckle install`
+de novo depois de atualizar (o `build` do lazy.nvim faz isso sozinho).
+
+O `make native` é o caminho de quem desenvolve: deixa o binário em
+`lua/deckle_native.<ext>`, dentro do plugin, e ele tem precedência sobre o
+diretório de dados.
+
+Alvos com binário na release:
+
+    x86_64-unknown-linux-gnu      deckle_native.so
+    aarch64-unknown-linux-gnu     deckle_native.so
+    x86_64-apple-darwin           deckle_native.so
+    aarch64-apple-darwin          deckle_native.so
+    x86_64-pc-windows-msvc        deckle_native.dll
+    aarch64-pc-windows-msvc       deckle_native.dll
+
+A coluna da direita é o nome com que o binário é instalado. No macOS o arquivo
+da release é um `.dylib`, instalado como `.so`, porque o `package.cpath` do
+LuaJIT não procura `.dylib`. Linux com musl (Alpine) não tem binário, porque o
+`.so` de glibc não carrega lá: o instalador vai direto para o cargo.
+
+==============================================================================
+4. COMANDOS                                                  *deckle-commands*
+
+:Deckle [{subcomando}]                                               *:Deckle*
+    Ponto de entrada de tudo. Sem argumento equivale a `toggle`. O Tab
+    completa os subcomandos. Nenhum subcomando aceita argumento próprio, e
+    um nome desconhecido avisa com `deckle: unknown subcommand` e não faz
+    nada. Os subcomandos de preview atuam sobre o buffer atual, ou sobre o
+    fonte dele se o foco estiver numa janela de preview.
+
+:Deckle open                                                    *:Deckle-open*
+    Abre o preview do buffer atual numa janela ao lado (veja
+    |deckle-config-split|), e renderiza. Com o preview já aberto, só
+    renderiza de novo e leva o foco para ele. O preview reaproveita o mesmo
+    buffer entre aberturas.
+
+:Deckle close                                                  *:Deckle-close*
+    Fecha a janela do preview, remove os autocmds dele e apaga do terminal as
+    imagens que ele tenha transmitido. O buffer de preview fica, escondido,
+    para a próxima abertura. Sem preview aberto, avisa
+    `deckle: there is no open preview for this buffer`.
+
+:Deckle toggle                                                *:Deckle-toggle*
+    Abre se estiver fechado, fecha se estiver aberto.
+
+:Deckle refresh                                              *:Deckle-refresh*
+    Renderiza de novo agora, sem esperar o debounce
+    (|deckle-config-debounce_ms|), e retransmite as imagens, para o caso de o
+    terminal tê-las perdido. Exige um preview aberto.
+
+:Deckle health                                                *:Deckle-health*
+    Atalho para |:checkhealth| deckle (|deckle-health|).
+
+:Deckle install                                              *:Deckle-install*
+    Instala o binário nativo do Mermaid. Veja |deckle-native-install|.
+
+O buffer de preview tem `filetype=deckle`, o nome `deckle://<arquivo>`, é
+scratch, não listado, e `nomodifiable`: a edição é rejeitada. A janela dele
+não tem número de linha, coluna de sinais, `wrap` nem conceal. O que passa da
+largura (código, diagrama, tabela larga) rola na horizontal, em vez de ser
+partido ao meio.
+
+O preview renderiza de novo, com debounce, quando o fonte muda (|TextChanged|
+e |InsertLeave|, ou seja, digitando ele espera a saída do modo insert) e
+quando a largura da janela muda. Apagar o buffer fonte descarta o preview.
+
+==============================================================================
+5. O QUE O PREVIEW MOSTRA                                   *deckle-rendering*
+
+Títulos
+    Sem o `#`: o nível aparece na cor (|hl-DeckleH1| a |hl-DeckleH6|) e, em
+    H1 e H2, num sublinhado do tamanho da linha mais larga (`═` e `─`, ou `=`
+    e `-` em ASCII). Cobre ATX e setext.
+
+Parágrafos e texto inline
+    Quebrados na largura da janela, medida em células de display: emoji e CJK
+    ocupam duas, e um emoji composto (com ZWJ, tom de pele ou VS16) nunca é
+    partido. Negrito, itálico, código inline e links têm cor própria. Um link
+    mostra só o texto, sem o destino. Tachado, entidades (`&amp;`) e tags HTML
+    inline passam como texto cru. Link de referência é resolvido pela
+    definição do documento.
+
+Listas
+    Marcador por nível (`•`, `◦`, `▪`, em ciclo; `-`, `*`, `+` em ASCII), com
+    número alinhado à direita nas ordenadas. Item de tarefa troca o marcador
+    por `☐` ou `☑` (`[ ]` e `[x]` em ASCII). Saem sempre apertadas: o IR não
+    distingue lista solta de apertada.
+
+Citações
+    Uma borda à esquerda em toda linha, também nas em branco, e aninhamento.
+
+Tabelas
+    Grade com bordas (`┌─┬┐│├┼┤└┴┘`, ou `+-|` em ASCII), colunas medidas por
+    largura de display, alinhamento à esquerda, ao centro ou à direita lido do
+    delimitador, que vale também para o cabeçalho. A tabela ocupa só o que
+    precisa. Mais larga que a janela, as colunas mais largas são truncadas com
+    reticências. Uma célula é uma linha só.
+
+Blocos de código
+    Numa moldura com cantos arredondados (`╭╮╰╯`, ou `+` em ASCII), com o
+    nome da linguagem na borda de cima. O texto é colorido pelo parser
+    treesitter da linguagem, se ele estiver instalado: sem parser, sem
+    linguagem ou com linguagem inexistente, o bloco sai sem cor e sem erro.
+    Apelidos comuns (`sh`, `js`, `py`, `ts`, `yml`, `c++`...) são
+    reconhecidos, e o que foi registrado com
+    |vim.treesitter.language.register()| vale primeiro. O código não é
+    quebrado em linhas.
+
+Mermaid
+    Um bloco com a linguagem `mermaid` vira arte de texto, com o binário
+    nativo. Veja |deckle-mermaid|.
+
+Imagens
+    Texto alternativo no formato `[image: alt]`, ou uma imagem de verdade em
+    terminais que a suportam. Veja |deckle-images|.
+
+Regras
+    Uma linha da largura inteira disponível.
+
+HTML
+    Não é interpretado: o bloco aparece como no fonte, em cor de comentário,
+    para nada sumir em silêncio.
+
+Bloco que o render não consegue desenhar vira a linha
+`[deckle: could not render <tipo> block]` (|hl-DeckleError|), e o resto do
+documento renderiza normalmente.
+
+==============================================================================
+6. CONFIGURAÇÃO                                                *deckle-config*
+
+A configuração é uma chamada a `setup()`, e todas as chaves são opcionais:
+>lua
+    require("deckle").setup({ split = "tab", sync = "off" })
+<
+`setup()` mescla a tabela nos valores de fábrica e valida. Uma chave
+desconhecida, em qualquer nível, é erro (`deckle: unknown option ...`), porque
+um erro de digitação ignorado vira "não funciona". Um valor inválido também
+lança, e deixa a configuração anterior intacta. Chamar `setup()` duas vezes
+é permitido: a segunda substitui a primeira, sem mesclar com ela.
+`require("deckle").config()` devolve a configuração efetiva.
+
+                                                      *deckle-config-defaults*
+Valores de fábrica:
+>lua
+    require("deckle").setup({
+      split = "vsplit",
+      width = nil,
+      charset = "auto",
+      sync = "cursor",
+      debounce_ms = 120,
+      native = { enabled = true, path = nil },
+      mermaid = { max_src_lines = 200 },
+      images = { enabled = "auto", max_height = 20 },
+    })
+<
+split                                                    *deckle-config-split*
+    Tipo: um de `"vsplit"`, `"split"` ou `"tab"`. Padrão: `"vsplit"`.
+    Onde a janela de preview abre: à direita do fonte, abaixo dele, ou numa
+    aba nova.
+
+width                                                    *deckle-config-width*
+    Tipo: inteiro positivo, ou `nil`. Padrão: `nil`.
+    Largura, em células, em que o texto é quebrado. `nil` é a largura da
+    janela de preview. Com `split = "vsplit"` a janela também é
+    redimensionada para esse valor.
+
+charset                                                *deckle-config-charset*
+    Tipo: um de `"auto"`, `"unicode"` ou `"ascii"`. Padrão: `"auto"`.
+    O conjunto de caracteres de bordas, marcadores, sublinhados e da arte do
+    Mermaid. `"auto"` vira `"unicode"`, salvo `$TERM` igual a `linux` ou
+    `dumb`, que viram `"ascii"`. É uma heurística, não foi medida em terminal
+    nenhum.
+
+sync                                                      *deckle-config-sync*
+    Tipo: um de `"cursor"` ou `"off"`. Padrão: `"cursor"`.
+    Liga a sincronia entre o cursor do fonte e o do preview
+    (|deckle-sync|). `"off"` desliga tudo, inclusive os autocmds. É lido ao
+    abrir o preview: mudar a opção com um preview aberto vale na abertura
+    seguinte.
+
+debounce_ms                                        *deckle-config-debounce_ms*
+    Tipo: número maior ou igual a zero. Padrão: `120`.
+    Quanto o preview espera, em milissegundos, depois de uma edição ou de um
+    redimensionamento antes de renderizar de novo. Chamadas dentro da janela
+    se fundem em uma.
+
+native                                                  *deckle-config-native*
+    Tabela com as opções do módulo nativo, abaixo (|deckle-mermaid|).
+
+native.enabled                                  *deckle-config-native.enabled*
+    Tipo: booleano. Padrão: `true`.
+    `false` nunca carrega o binário nativo: o Mermaid vira código. É lido a
+    cada bloco, então desligar vale na hora, e religar carrega sem reiniciar.
+
+native.path                                        *deckle-config-native.path*
+    Tipo: string, ou `nil`. Padrão: `nil`.
+    Caminho explícito do binário. Quando configurado, ele manda: se não
+    carregar, o plugin não cai para o binário instalado nem para o do
+    `make native`, e o motivo vai para o checkhealth. O resultado da primeira
+    carga vale pela sessão toda, então mudar o caminho só vale ao reiniciar.
+
+mermaid                                                *deckle-config-mermaid*
+    Tabela com as opções dos diagramas, abaixo.
+
+mermaid.max_src_lines                    *deckle-config-mermaid.max_src_lines*
+    Tipo: inteiro positivo. Padrão: `200`.
+    Um bloco `mermaid` com mais linhas que isso é recusado pelo módulo antes
+    do layout, que é o que custa caro (dezenas de milissegundos num diagrama
+    grande): vira código, com uma nota.
+
+images                                                  *deckle-config-images*
+    Tabela com as opções da camada 2, abaixo (|deckle-images|).
+
+images.enabled                                  *deckle-config-images.enabled*
+    Tipo: `"auto"`, `true` ou `false`. Padrão: `"auto"`.
+    `"auto"` detecta o terminal, e na dúvida não desenha imagem. `true`
+    assume o risco: levanta as barras do tmux sem passthrough confirmado e da
+    sessão SSH, e só elas (não inventa um protocolo para um terminal que não
+    foi reconhecido). `false` nunca desenha imagem.
+
+images.max_height                            *deckle-config-images.max_height*
+    Tipo: inteiro positivo. Padrão: `20`.
+    O teto, em linhas do preview, de uma imagem.
+
+==============================================================================
+7. CAMADAS DE DEGRADAÇÃO                                       *deckle-layers*
+
+Cada camada funciona sozinha, e o plugin nunca depende de estar numa camada
+específica. As capacidades são detectadas em tempo de execução. Na dúvida, a
+camada mais baixa.
+
+    Camada  Requisito             Mermaid vira       Imagens viram
+    ------  --------------------  -----------------  -----------------
+    0       só o Neovim           bloco de código    texto alternativo
+    1       + `deckle_native`     arte de texto      texto alternativo
+    2       + protocolo gráfico   arte de texto      imagem de verdade
+    3       + `mmdc` no PATH      imagem rasterizada imagem de verdade
+
+A camada 0 é o preview de Markdown completo: títulos, parágrafos, listas,
+citações, tabelas e código colorido, sem uma linha de Rust. A camada 1 é o
+alvo principal e funciona em qualquer terminal, inclusive tty, ssh, tmux e CI,
+porque a saída é texto. A camada 2 é um bônus, e só existe onde o terminal
+fala o protocolo gráfico do kitty.
+
+A camada 3 não existe: é um desenho, não código. Nada do plugin depende dela.
+
+As camadas 1 e 2 são independentes: o `:checkhealth deckle` reporta a do
+binário nativo em "Capability layer" e a do terminal em "Terminal graphics"
+(|deckle-health|).
+
+==============================================================================
+8. MERMAID E O BINÁRIO NATIVO                                 *deckle-mermaid*
+
+Um bloco de código cuja linguagem é exatamente `mermaid` (minúscula; `Mermaid`
+segue como código) é desenhado como arte de texto, em Unicode ou ASCII
+conforme o |deckle-config-charset|. O desenho vem do módulo `deckle_native`,
+escrito em Rust sobre o crate `merman` (a implementação de Mermaid sem Node e
+sem Chromium que o Zed usa), carregado só quando o primeiro bloco `mermaid`
+aparece ou quando o checkhealth o pede.
+
+                                                               *deckle-native*
+O módulo é opcional. Na primeira vez que é pedido, ele é procurado nesta
+ordem, e a primeira opção que carrega vale:
+
+1. O caminho de |deckle-config-native.path|, quando configurado. É exclusivo:
+   se ele não carregar, as outras opções não são tentadas.
+2. `lua/deckle_native.<ext>` no runtimepath: o que o `make native` deixa.
+3. O binário que `:Deckle install` pôs em `stdpath("data")/deckle/`.
+
+O resultado, bom ou ruim, vale pela sessão: um binário que não carregou não
+carrega na segunda tentativa. Reinicie o Neovim depois de instalar.
+
+Tipos de diagrama que o renderizador de texto cobre (14), pelo nome que o
+módulo informa: `class`, `er`, `flowchart`, `gantt`, `gitgraph`, `journey`,
+`kanban`, `mindmap`, `packet`, `sequence`, `state`, `timeline`, `treeView` e
+`xychart`. A lista de verdade vem do módulo, em tempo de execução, e o
+checkhealth a mostra. Oito deles (`gantt`, `gitgraph`, `journey`, `kanban`,
+`mindmap`, `packet`, `timeline`, `treeView`) saem como texto estruturado, e
+não como um desenho: é a projeção primária deles no merman.
+
+Qualquer falha degrada só aquele bloco, para um bloco de código com moldura e
+o rótulo `mermaid`, mais uma nota discreta (|hl-DeckleCodeNote|) logo abaixo:
+
+- módulo nativo ausente, não carregado ou desligado (`native.enabled`);
+- sintaxe inválida;
+- um bloco com mais linhas que |deckle-config-mermaid.max_src_lines|;
+- um tipo que o renderizador de texto não cobre (`pie`, `c4`...);
+- um erro do próprio módulo.
+
+Um bloco `mermaid` sem linha nenhuma não desenha nada. Uma linha de diagrama
+mais larga que a janela fica inteira, porque o merman nunca trunca (perderia
+dado): a janela de preview rola na horizontal.
+
+Cada desenho fica guardado, por conteúdo, largura, charset e limite de linhas,
+em até 64 entradas. Re-renderizar o mesmo diagrama não volta a chamar o
+módulo.
+
+==============================================================================
+9. IMAGENS                                                     *deckle-images*
+
+Um parágrafo que é só `![texto](caminho.png)` vira uma imagem de verdade
+quando o terminal fala o protocolo gráfico do kitty. Em todo outro caso
+continua sendo o texto `[image: texto]` (|hl-DeckleImage|), e nada mais muda.
+
+O que vira imagem:
+
+- só um parágrafo que é uma imagem sozinha;
+- só PNG local: o caminho é relativo ao arquivo fonte, absoluto ou `~/`, e
+  `%20` e afins são decodificados.
+
+URL remota, `data:`, JPEG, SVG, arquivo ausente ou ilegível, maior que 32 MiB
+(4 MiB numa sessão remota) ou com um cabeçalho que não é de PNG viram texto
+alternativo, sem erro. O mesmo vale para uma imagem no meio do texto, dentro
+de um link (um selo) ou ao lado de outra imagem.
+
+Terminais, pelo que `:checkhealth deckle` detecta:
+
+    kitty, ghostty          desenha a imagem (protocolo do kitty)
+    iTerm2, WezTerm         detectados, mas só texto alternativo
+    foot, mlterm, contour   detectados (sixel), mas só texto alternativo
+    GNU screen              nunca: não repassa protocolo gráfico
+    terminal burro          nunca: `$TERM` ausente, `dumb` ou `linux`
+
+Dentro do tmux só há imagem com `allow-passthrough` ligado e confirmado
+(`tmux set -g allow-passthrough on`) e o terminal de fora reconhecido por uma
+variável que não seja `$TERM` nem `$TERM_PROGRAM`, que no tmux são do tmux.
+Numa sessão SSH só há imagem com |deckle-config-images.enabled| igual a
+`true`, que assume o risco; nesse caso a imagem viaja inteira pelo terminal,
+em vez de por caminho. Com `'ambiwidth'` igual a `double` não há imagem.
+
+Como funciona: a imagem é transmitida uma vez, e o texto do preview ganha
+células de placeholder Unicode (`U+10EEEE`) coloridas com o id dela. Como o
+placeholder é texto, o Neovim o rola e o redesenha junto com o buffer, e não
+há código de reposicionamento. O custo está em outro lugar:
+
+- o id é a cor do primeiro plano, e por isso cabe num byte: 240 imagens por
+  vez, cada uma com um grupo `DeckleImg<id>` com o id na cor;
+- um |hl-CursorLine| com `fg` por cima pode estragar a imagem;
+- o tamanho da célula em pixels não está na API do Neovim: o deckle supõe
+  10 x 20 para decidir quantas linhas reservar (até
+  |deckle-config-images.max_height|), e o terminal encaixa a imagem no
+  retângulo mantendo a proporção.
+
+Fechar o preview (|:Deckle-close|, fechar a janela, apagar o fonte) apaga do
+terminal as imagens do deckle, e só as dele. Ao sair do Neovim, o que sobrou
+também é apagado. |:Deckle-refresh| as transmite de novo.
+
+O que não foi medido: nenhum terminal gráfico de verdade abriu uma imagem do
+deckle. O que foi verificado é o que sai do Neovim: os escapes de transmitir,
+posicionar e apagar, e as células com o id na cor.
+
+==============================================================================
+10. SINCRONIA DE SCROLL                                          *deckle-sync*
+
+Com |deckle-config-sync| igual a `"cursor"`, mover o cursor no fonte move o
+do preview até o bloco correspondente, e o inverso. Um bloco do preview pode
+ocupar mais ou menos linhas que no fonte (um parágrafo quebrado, um diagrama
+de 40 linhas que vem de um bloco de 6), então a correspondência é por bloco:
+
+- dentro de um bloco, a linha é interpolada pelo deslocamento;
+- entre dois blocos, vale o bloco mais próximo, e o empate vale o de cima;
+- antes do primeiro bloco, a primeira linha; depois do último, a última.
+
+Além do cursor, o destino é rolado para que a linha de chegada fique na mesma
+altura de tela do cursor de origem. O preview abre onde o fonte já estava, e
+depois de uma edição volta a se alinhar com o cursor do fonte.
+
+A sincronia usa só |CursorMoved|, e não |CursorMovedI| nem |WinScrolled|:
+rolar um lado com a roda do mouse ou com CTRL-E, sem mover o cursor, não
+sincroniza. Com `wrap` ligado no fonte a altura é uma aproximação.
+
+==============================================================================
+11. HIGHLIGHTS                                             *deckle-highlights*
+
+Todos os grupos são definidos com `default = true` e ligados a grupos padrão
+do Neovim, de modo que o seu esquema de cores, ou um |nvim_set_hl()| seu feito
+antes, sempre vence. Para trocar a aparência, defina o grupo:
+>lua
+    vim.api.nvim_set_hl(0, "DeckleH1", { fg = "#ff9e64", bold = true })
+<
+Um |:colorscheme| limpa os grupos criados por |nvim_set_hl()|. O deckle
+redefine os dele a cada |ColorScheme|, mas as suas sobrescritas se perdem:
+reaplique-as num autocmd de |ColorScheme|.
+
+Títulos. Todos ligados ao mesmo grupo de fábrica: o nível aparece também no
+sublinhado do H1 e do H2.
+
+DeckleH1 (link: Title)                                           *hl-DeckleH1*
+    Título de nível 1, mais o sublinhado.
+DeckleH2 (link: Title)                                           *hl-DeckleH2*
+    Título de nível 2, mais o sublinhado.
+DeckleH3 (link: Title)                                           *hl-DeckleH3*
+    Título de nível 3.
+DeckleH4 (link: Title)                                           *hl-DeckleH4*
+    Título de nível 4.
+DeckleH5 (link: Title)                                           *hl-DeckleH5*
+    Título de nível 5.
+DeckleH6 (link: Title)                                           *hl-DeckleH6*
+    Título de nível 6.
+
+Texto inline.
+
+DeckleStrong (bold)                                          *hl-DeckleStrong*
+    Negrito.
+DeckleEmphasis (italic)                                    *hl-DeckleEmphasis*
+    Itálico.
+DeckleCodeInline (link: String)                          *hl-DeckleCodeInline*
+    Código inline.
+DeckleLink (link: Underlined)                                  *hl-DeckleLink*
+    O texto de um link.
+DeckleImage (link: Special)                                   *hl-DeckleImage*
+    O texto alternativo de uma imagem, `[image: alt]`.
+
+Blocos.
+
+DeckleCode (link: ColorColumn)                                 *hl-DeckleCode*
+    O fundo do corpo de um bloco de código.
+DeckleCodeBorder (link: Comment)                         *hl-DeckleCodeBorder*
+    A moldura do bloco de código.
+DeckleCodeLang (link: Type)                                *hl-DeckleCodeLang*
+    O nome da linguagem, na borda de cima da moldura.
+DeckleCodeNote (link: Comment)                             *hl-DeckleCodeNote*
+    A nota de uma linha sob um bloco, como o motivo de um Mermaid não ter
+    sido desenhado.
+DeckleQuote (link: Comment)                                   *hl-DeckleQuote*
+    A borda de uma citação.
+DeckleBullet (link: Special)                                 *hl-DeckleBullet*
+    O marcador de um item de lista.
+DeckleRule (link: Comment)                                     *hl-DeckleRule*
+    A regra horizontal.
+DeckleHtml (link: Comment)                                     *hl-DeckleHtml*
+    Um bloco de HTML, que aparece cru.
+DeckleTableHeader (link: Title)                         *hl-DeckleTableHeader*
+    As células do cabeçalho de uma tabela. Tem prioridade menor que a das
+    marcas inline, para um link ou código no cabeçalho manter a cor.
+DeckleTableBorder (link: Comment)                       *hl-DeckleTableBorder*
+    As bordas de uma tabela.
+DeckleMermaid (link: Special)                               *hl-DeckleMermaid*
+    A arte de um diagrama Mermaid. Quando o diagrama cai para código, valem
+    |hl-DeckleCodeBorder|, |hl-DeckleCodeLang| e |hl-DeckleCodeNote|.
+DeckleError (link: WarningMsg)                                *hl-DeckleError*
+    A linha de um bloco que o render não conseguiu desenhar.
+
+Grupos que o deckle usa mas não define:
+
+`@captura.linguagem` (por exemplo `@keyword.lua`)
+    O texto de um bloco de código é colorido pelos grupos de treesitter que o
+    Neovim e o seu esquema já definem. Sem o grupo da linguagem, vale o
+    genérico (`@keyword`). Com o parser ausente, o bloco sai sem cor.
+
+`DeckleImg<id>`
+    Um grupo por imagem, criado em tempo de execução, que carrega o id da
+    imagem na cor do primeiro plano. Não os sobrescreva: o id é a cor.
+
+==============================================================================
+12. EVENTOS E API EM LUA                                          *deckle-api*
+
+Eventos |User|, para reagir ao preview sem editar o plugin. Todos levam
+`data = { src_buf, buf, win }`: o buffer fonte, o buffer de preview e a janela
+dele (`win` é `nil` em `DeckleClose`).
+                                                               *deckle-events*
+DeckleOpen                                                        *DeckleOpen*
+    A janela existe e o primeiro render ainda não aconteceu.
+DeckleRender                                                    *DeckleRender*
+    Depois de cada render, já com o mapa novo.
+DeckleClose                                                      *DeckleClose*
+    A janela foi fechada.
+
+Exemplo: >lua
+    vim.api.nvim_create_autocmd("User", {
+      pattern = "DeckleRender",
+      callback = function(args)
+        print("preview renderizado, buffer " .. args.data.buf)
+      end,
+    })
+<
+Funções (veja o comentário no topo de cada módulo para o contrato completo):
+
+require("deckle").setup({opts})
+    Aplica a configuração (|deckle-config|). Devolve a configuração efetiva.
+
+require("deckle").config()
+    A configuração efetiva, já mesclada com os valores de fábrica.
+
+require("deckle.preview").open({bufnr})
+require("deckle.preview").close({bufnr})
+require("deckle.preview").toggle({bufnr})
+require("deckle.preview").refresh({bufnr})
+    O que os subcomandos de mesmo nome fazem. {bufnr} é opcional e vale o
+    buffer atual, ou o fonte dele se for um preview.
+
+require("deckle.preview").state({src_buf})
+    Um retrato do preview de um buffer fonte (`buf`, `win`, `map`, `width`,
+    `renders`), ou `nil` se ele nunca foi aberto.
+
+require("deckle.install").install({opts}, {callback})
+    O que `:Deckle install` faz. Assíncrono: devolve na hora e chama
+    {callback} no fim, com `{ ok, stage, error, info }`.
+
+require("deckle.install").info()
+    Onde está o binário nativo e de onde veio: `{ origin, path, version,
+    target, source, reason, last_error }`, com `origin` igual a `"release"`,
+    `"build"` ou `"missing"`. Só lê o disco.
+
+require("deckle.native").status()
+    O que o carregador do módulo nativo encontrou: `{ enabled, attempted,
+    loaded, source, path, version, reason }`.
+
+==============================================================================
+13. CHECKHEALTH                                                *deckle-health*
+
+`:checkhealth deckle` (ou `:Deckle health`) diz em que camada o plugin está e
+o que falta para subir. Camada 0 não é erro: é o estado normal de quem não
+instalou o binário, e aparece como informação. Um aviso só aparece quando há
+algo a consertar (um binário que não carrega, uma instalação que falhou).
+Seções:
+
+Neovim
+    A versão em uso e o piso, 0.11.0. Erro abaixo dele.
+
+Treesitter parsers
+    Se `markdown` e `markdown_inline` foram encontrados. Erro se não.
+
+Configuration
+    Se `setup()` foi chamado, e o resumo de `split`, `width`, `charset`,
+    `sync` e `debounce_ms`.
+
+Capability layer
+    A camada do binário nativo: `layer 1` com a versão do módulo, de onde veio
+    e os tipos de diagrama que ele suporta, lidos em tempo de execução, ou
+    `layer 0` com o motivo. Um binário que existe e não carregou é aviso, com
+    o que fazer. É a única seção que carrega o módulo.
+
+Native binary
+    De onde veio o binário (uma release, um build local) e onde está, ou que
+    está ausente, com como instalar. Mostra o erro da última instalação que
+    falhou.
+
+Terminal graphics
+    O protocolo gráfico detectado e o motivo da decisão: `layer 2` quando
+    imagens serão desenhadas, ou o que barrou (tmux, SSH, terminal burro,
+    protocolo ainda não suportado). Só informação: texto alternativo é o
+    comportamento desenhado.
+
+==============================================================================
+14. LIMITAÇÕES CONHECIDAS                                 *deckle-limitations*
+
+Conhecidas e registradas, por área. O que não foi medido está dito como tal.
+
+Parser
+- Aninhamento fundo vira texto cru. O scanner do parser de Markdown aborta o
+  Neovim (exit 134, sem `pcall` que segure) com cerca de 200 contêineres
+  abertos. Acima de 64 níveis de citação e lista, estimados antes de chamar o
+  treesitter, o documento inteiro cai no caminho cru: um parágrafo por trecho
+  entre linhas em branco. Um contêiner mais fundo que 32 níveis no IR vira
+  só um parágrafo cru.
+- Front matter (`---` no topo) e qualquer nó que o treesitter não entenda
+  saem como parágrafo cru.
+- Uma última linha de tabela só com células vazias (`|  |  |` no fim) não é
+  reconhecida pelo treesitter: ela e a linha anterior viram parágrafo cru.
+- `[x]: url` não é uma definição de link, porque colide com o item de tarefa
+  `[x]`. Não use `x` como rótulo.
+
+Texto
+- Quebra de linha de CJK diante de pontuação não segue a regra de kinsoku: um
+  `。` pode abrir uma linha.
+- Largura de emoji é a do Neovim (`nvim_strwidth()`), não a da fonte do
+  terminal. Um emoji que o terminal desenha com outra largura desalinha uma
+  tabela, como em qualquer plugin.
+- Com `'ambiwidth'` igual a `double` (comum em locale CJK) os caracteres de
+  caixa medem duas células: as tabelas caem para bordas ASCII e a imagem não é
+  desenhada.
+- `charset = "auto"` é uma heurística sobre `$TERM`.
+
+Tabelas e código
+- Tabela com colunas demais para a janela transborda a largura: o preview não
+  quebra linha, e não há scroll horizontal próprio além do da janela.
+- O alinhamento por colunas usa `nvim_strwidth()`, e não `strdisplaywidth()`,
+  porque este mede na janela atual e, com `wrap` ligado, soma uma célula
+  quando um caractere largo cai na última coluna.
+- Um bloco de código não é quebrado, e vai à tela inteiro.
+- Um bloco com mais de 5000 linhas ou 512 KB sai sem cor, e os blocos
+  `markdown` e `markdown_inline` nunca são coloridos (o parser deles aborta o
+  Neovim com aninhamento fundo). Não há injeção de linguagem dentro de um
+  bloco. Só os parsers `lua`, `c` e `vim` foram exercitados: outro parser
+  pode ter o mesmo tipo de `assert` no scanner.
+
+Mermaid
+- Oito tipos saem como texto estruturado, e tipos como `pie` e `c4` caem para
+  código (|deckle-mermaid|).
+- O merman está em alpha e quebra API entre versões, então o plugin pina a
+  versão exata. Um nó em losango, `{texto}`, num flowchart sai com a caixa
+  sobreposta: é um bug cosmético de layout do merman.
+- O diagrama de 200 linhas (o limite) no re-render de um documento grande não
+  foi medido.
+- O binário só é carregado uma vez por sessão: reinicie o Neovim depois de
+  `:Deckle install`.
+
+Distribuição
+- Linux com musl (Alpine) não tem binário, e vai direto para o cargo.
+- O binário de Windows aarch64 só é compilado na CI, nunca executado.
+- Enquanto a release `v<versão>` do GitHub não existir, o download dá 404 e o
+  instalador cai para o cargo.
+
+Sincronia e janela
+- Só |CursorMoved| sincroniza: sem |CursorMovedI|, sem |WinScrolled|.
+- Não foram medidos: `wrap` ligado, dobras e `scrolloff` alto no fonte, e a
+  rolagem pelo mouse.
+- Nada disto foi medido numa UI de terminal de verdade: os testes são
+  headless, com teclas reais enviadas por RPC.
+
+Imagens
+- Só o protocolo do kitty (kitty e ghostty), só PNG local, e só um parágrafo
+  que é uma imagem sozinha (|deckle-images|).
+- Nenhum terminal gráfico de verdade abriu uma imagem do deckle.
+
+Documentação adicional, no repositório: `docs/architecture.md` (camadas,
+pipeline, contrato entre Lua e Rust), `docs/roadmap.md` (o que cada fase
+entregou e os desvios), `docs/validation.md` (o que foi medido) e `docs/adr/`
+(as cinco decisões travadas).
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
