@@ -32,6 +32,9 @@ M.groups = {
 
   -- Blocos.
   DeckleCode = { link = "ColorColumn" },
+  DeckleCodeBorder = { link = "Comment" },
+  DeckleCodeLang = { link = "Type" },
+  DeckleCodeNote = { link = "Comment" },
   DeckleQuote = { link = "Comment" },
   DeckleBullet = { link = "Special" },
   DeckleRule = { link = "Comment" },
