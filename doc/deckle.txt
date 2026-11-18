@@ -397,11 +397,11 @@ ordem, e a primeira opção que carrega vale:
 O resultado, bom ou ruim, vale pela sessão: um binário que não carregou não
 carrega na segunda tentativa. Reinicie o Neovim depois de instalar.
 
-Tipos de diagrama que o renderizador de texto cobre (14), pelo nome que o
+Tipos de diagrama que o renderizador de texto cobre (15), pelo nome que o
 módulo informa: `class`, `er`, `flowchart`, `gantt`, `gitgraph`, `journey`,
-`kanban`, `mindmap`, `packet`, `sequence`, `state`, `timeline`, `treeView` e
-`xychart`. A lista de verdade vem do módulo, em tempo de execução, e o
-checkhealth a mostra. Oito deles (`gantt`, `gitgraph`, `journey`, `kanban`,
+`kanban`, `mindmap`, `packet`, `sequence`, `state`, `swimlane`, `timeline`,
+`treeView` e `xychart`. A lista de verdade vem do módulo, em tempo de
+execução, e o checkhealth a mostra. Oito deles (`gantt`, `gitgraph`, `journey`, `kanban`,
 `mindmap`, `packet`, `timeline`, `treeView`) saem como texto estruturado, e
 não como um desenho: é a projeção primária deles no merman.
 

@@ -63,7 +63,7 @@ local typed = native.render("sequenceDiagram\n  A->>B: hi", { diagram_ty = "sequ
 check("diagram_ty accepted", #typed > 3)
 
 local types = native.supported_types()
-check("supported_types has 14 entries", #types == 14, #types)
+check("supported_types has 15 entries", #types == 15, #types)
 check("version is a string", type(native.version()) == "string" and native.version() ~= "")
 
 -- 3. Erros capturaveis por pcall: o coracao do gate. Cada um e um `Err` do Rust.

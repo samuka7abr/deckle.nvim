@@ -281,7 +281,7 @@ de fábrica. Mudou uma opção ou um grupo? A suíte diz o que falta documentar.
 Componente nativo (Rust 1.95, instalado pelo `rustup` a partir do `rust-toolchain.toml`):
 
 ```sh
-cargo test                  # lógica pura, sem Neovim: os 14 tipos de diagrama, erros, guardas
+cargo test                  # lógica pura, sem Neovim: os 15 tipos de diagrama, erros, guardas
 make native                 # compila e instala lua/deckle_native.<ext> (falha se o build falhar)
 ./scripts/test-native.sh    # make native + testes headless no nvim com o .so de verdade
 make bench                  # benchmark do flowchart
@@ -297,7 +297,7 @@ Lua faz tudo que encosta no Neovim: treesitter (os parsers vêm do **core**, sem
 nvim-treesitter), buffer de preview somente-leitura, extmarks, sincronia de scroll e a
 detecção do terminal. Um componente Rust opcional, carregado via `mlua`, cuida só do Mermaid,
 com o [`merman`](https://crates.io/crates/merman-ascii), a implementação headless de Mermaid
-em Rust que o Zed usa: 14 tipos de diagrama, ~1,4 ms num flowchart típico.
+em Rust que o Zed usa: 15 tipos de diagrama, ~1,4 ms num flowchart típico.
 
 Princípios de projeto: zero dependência obrigatória; capacidades extras são detectadas e
 melhoram o resultado, sem que a ausência delas quebre nada; nada pode matar o editor; a

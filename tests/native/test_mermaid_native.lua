@@ -404,14 +404,14 @@ T["diagram_ty do bloco pula a detecção; um tipo desconhecido degrada, não lan
 -- Checkhealth
 -- ---------------------------------------------------------------------------------------
 
-T["checkhealth: camada 1 com os 14 tipos suportados lidos do crate"] = native_case(function()
+T["checkhealth: camada 1 com os 15 tipos suportados lidos do crate"] = native_case(function()
   child.lua([[vim.env.XDG_DATA_HOME = vim.fn.tempname()]])
   child.cmd("checkhealth deckle")
   local text = table.concat(child.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
   eq(text:match("layer 1 —") ~= nil, true)
   eq(text:match("layer 0 —") ~= nil, false)
   eq(text:match("native mermaid renderer loaded %(deckle_native v") ~= nil, true)
-  eq(text:match("supported diagram types %(14%)") ~= nil, true)
+  eq(text:match("supported diagram types %(15%)") ~= nil, true)
   eq(text:match("flowchart") ~= nil, true)
   eq(text:match("sequence") ~= nil, true)
   eq(text:match("WARNING") ~= nil, false)

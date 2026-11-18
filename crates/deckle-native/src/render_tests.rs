@@ -33,6 +33,10 @@ const MINIMAL: &[(&str, &str)] = &[
     ),
     ("sequence", "sequenceDiagram\n  Alice->>John: Hello"),
     ("state", "stateDiagram-v2\n  [*] --> A\n  A --> [*]"),
+    (
+        "swimlane",
+        "swimlane-beta LR\n  subgraph Dev\n    A[Code] --> B[Test]\n  end\n  subgraph Ops\n    C[Deploy]\n  end\n  B --> C",
+    ),
     ("timeline", "timeline\n  title History\n  2002 : LinkedIn"),
     ("treeView", "treeView-beta\n  \"root\"\n    \"child\""),
     (
@@ -78,7 +82,7 @@ fn assert_readable(err: &RenderError) {
     );
 }
 
-// --- gate 1: os 14 tipos -------------------------------------------------------------------
+// --- gate 1: os 15 tipos -------------------------------------------------------------------
 
 #[test]
 fn fixtures_cover_exactly_the_supported_types() {
@@ -90,7 +94,7 @@ fn fixtures_cover_exactly_the_supported_types() {
         fixtures, supported,
         "o merman mudou a lista de tipos suportados: ajuste MINIMAL"
     );
-    assert_eq!(supported.len(), 14);
+    assert_eq!(supported.len(), 15);
 }
 
 #[test]
