@@ -100,6 +100,11 @@ local ok, lines = pcall(native.render, src, {
 -- ok == false → `lines` é uma string de uma linha com o motivo; o bloco degrada para código cru
 -- ok == true  → `lines` é string[] (sem "\n"), pronta para nvim_buf_set_lines
 
+-- Segunda função, mesma entrada e mesmos erros: além das linhas, diz se o desenho é fiel.
+local ok2, drawing = pcall(native.render_ex, src, opts)
+-- ok2 == true → drawing = { lines = string[], simplified = "subgraphs" | "composite states" | nil,
+--                           cause = <mensagem do merman> | nil }
+
 native.supported_types()  -- string[]: os 15 tipos do renderer de texto, lidos do merman
 native.version()          -- string: versão do crate deckle-native
 ```
@@ -107,6 +112,7 @@ native.version()          -- string: versão do crate deckle-native
 ```rust
 // Rust — a lógica pura não conhece Lua (crates/deckle-native/src/render.rs)
 pub fn render(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError>;
+pub fn render_ex(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError>;
 pub fn supported_types() -> Vec<String>;
 
 // a camada mlua é fina (src/binding.rs)
@@ -138,6 +144,15 @@ Erros que o módulo produz, todos em inglês e em uma linha:
 passa dela, o crate tenta o perfil compacto (só flowchart e sequence o aceitam) e devolve o
 mais estreito. Se ainda assim sobrar linha larga, ela vem inteira, e decidir o que fazer
 com ela é da camada Lua.
+
+**Fallback de achatamento.** O merman não roteia arestas que cruzam a borda de um `subgraph`
+(V11) e responde `routes crossing reserved graph geometry`. Num flowchart ou state com
+subgraph (ou estado composto), esse erro, e só ele, faz o crate achatar o texto
+(`flatten.rs`: Rust puro, sem merman) e renderizar de novo **uma vez**. Se o achatado também
+falha, o erro devolvido é o do diagrama original. `render_ex` diz que houve simplificação
+(`simplified`); `render` faz o mesmo desenho e devolve só as linhas, e por isso a API que já
+existia não mudou. O `render/mermaid.lua` usa `render_ex` quando o módulo a exporta e mostra a
+nota `mermaid: layout simplified (subgraphs flattened)` sob o desenho.
 
 ## 6. Camadas de degradação
 

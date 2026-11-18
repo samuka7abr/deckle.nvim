@@ -124,6 +124,21 @@ Consequências:
 - O renderer cobre **15 tipos** (`ascii_supported_diagram_types()` lista `swimlane` além dos 14
   anteriores). A guarda `fixtures_cover_exactly_the_supported_types` em `render_tests.rs` passou
   de 14 para 15.
+- **Fallback de achatamento.** Como a troca de versão não conserta os subgraphs, o
+  `render.rs` ganhou o `render_ex`: se o render de um flowchart ou state falha com
+  `routes crossing reserved graph geometry` (ou `unroutable graph edges`, das versões novas),
+  o `flatten.rs` tira as caixas dos subgraphs do texto e o crate tenta de novo, uma vez. O
+  resultado carrega `simplified`, e o Lua mostra uma nota. Decisões:
+  - **Uma segunda função** (`render_ex`), e não um retorno extra de `render`: a API Lua que já
+    existe, e os mocks da suíte, continuam valendo. O Lua cai para `render` se o módulo não
+    tem `render_ex`.
+  - **O subgraph que uma aresta cita vira um nó comum** com o mesmo id e título, em vez de a
+    aresta apontar para o primeiro nó dele ou ser descartada. Descartar deslocaria os índices
+    do `linkStyle`, e apontar para um membro mentiria sobre o que a aresta liga.
+  - **Só os erros de roteamento disparam o fallback.** Sintaxe inválida, forma não suportada
+    e tamanho falhariam igual no achatado.
+  - **O erro devolvido, quando o achatado também falha, é o do original**: é o que o usuário
+    escreveu.
 - O pino vive nos mesmos quatro lugares de antes (`Cargo.toml`, `check-merman-version.sh`,
   este ADR e o `CLAUDE.md`), e agora o `Cargo.lock` registra também as dependências novas da
   0.8.0 (`dugong`, `lol_html`, `cssparser`...). O instalador continua baixando o binário pronto,
