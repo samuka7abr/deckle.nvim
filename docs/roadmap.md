@@ -797,6 +797,42 @@ neste PR. O que difere do esboço acima ou vai além:
 
 ---
 
+## Depois da v0.3 — flowchart real que não renderiza, merman 0.10.0 e o showcase de Mermaid
+
+Um PR fora das fases (`fix/mermaid-flowchart-subgraphs`), aberto por um bug report: o primeiro
+diagrama do README de um projeto real (flowchart TB com subgraphs aninhados e `direction`
+diferentes) não renderizava, e o preview mostrava só o código com a nota `mermaid: unsupported
+diagram: ASCII rendering does not support `routes crossing reserved graph geometry` for
+`flowchart` yet`. O terceiro bloco do mesmo README (`graph LR` com subgraphs) também.
+
+**Entregue.** A causa, o que foi medido por versão e por opção e o benchmark estão em V5b
+(`docs/validation.md`); a decisão está no ADR-0002.
+
+- **Causa.** O layout de texto do `merman-ascii` não acha rota para a aresta que cruza a borda de
+  um subgraph (e para duas arestas de traços diferentes que se cruzam, e para o estado composto do
+  `state`). **Nenhuma versão (`0.8.0-alpha.6`, `0.10.0`) nem opção (compacto, `Auto`, teto de
+  trabalho, espaçamento, sem `direction`, achatar parte dos subgraphs) renderiza o diagrama do
+  bug.** O que renderiza é o mesmo grafo **sem as bordas dos subgraphs**.
+- **Solução.** (1) O crate ganhou o degrau de simplificação do flowchart: se o diagrama como
+  escrito falha, tenta de novo sem o traço das arestas, sem as bordas dos subgraphs e sem os dois, e
+  devolve `lines, notice`; o Lua põe o aviso numa linha `DeckleCodeNote` sob o desenho. Os dois
+  diagramas do bug saem desenhados. (2) O merman subiu para a `0.10.0` (os três crates, pinados),
+  que roteia mais e é mais rápida. (3) O teto de trabalho de layout subiu de 2 para 4 milhões.
+- **`examples/mermaid.md`** tem um diagrama grande de cada um dos 14 tipos, o bug report (os dois
+  diagramas copiados do README) e um `pie` para provar a degradação. É teste: o `cargo test`
+  renderiza cada bloco, e `tests/native/test_mermaid_showcase_native.lua` abre o arquivo no
+  preview e exige que só o `pie` degrade, no orçamento de tempo, com o cache acertando na segunda
+  passada.
+- **Desvios.** O pin passou de dois crates para três: o `OperationControl` mora no `merman-model`
+  e a `0.10.0` não o reexporta. `diagram-swimlane` ficou de fora das features para o
+  `supported_types()` seguir em 14. `render` (só as linhas) virou só de teste; o binding usa
+  `render_with_notice`. A função nativa devolve `lines, notice` em vez de só `lines`.
+- **Não foi validado.** A `0.8.0` estável; o preview numa UI de terminal de verdade; a
+  legibilidade do diagrama do bug (348 colunas, achatado) numa janela estreita; o degrau para o
+  `state` (o composto continua erro, e é o que o doc registra).
+
+---
+
 ## Dependências entre fases
 
 ```
@@ -834,6 +870,7 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
   `.cargo/config.toml` no macOS. Windows aarch64 só compila (cross). Ver "Entregue" na fase 8 e
   V9 em `docs/validation.md`.
 - **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. ~~Reconferir
-  na fase 6.~~ **Reconferido na fase 6 (2026-11-17)**: o pin fica, mas já existem `0.8.0` e
-  `0.10.0` na crates.io. Subir é um PR próprio; ver ADR-0002.
+  na fase 6.~~ **Reconferido na fase 6 (2026-11-17)**: o pin ficou, mas já existiam `0.8.0` e
+  `0.10.0` na crates.io. **Subiu para `0.10.0` em 2026-11-18**, no PR do flowchart que não
+  renderiza (ver "Depois da v0.3" e o ADR-0002).
 - **Sobrevivência da camada 2.** Decidir depois da v0.2.0, com uso real na mão.

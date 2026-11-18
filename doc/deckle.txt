@@ -418,9 +418,24 @@ Um bloco `mermaid` sem linha nenhuma não desenha nada. Uma linha de diagrama
 mais larga que a janela fica inteira, porque o merman nunca trunca (perderia
 dado): a janela de preview rola na horizontal.
 
-Cada desenho fica guardado, por conteúdo, largura, charset e limite de linhas,
-em até 64 entradas. Re-renderizar o mesmo diagrama não volta a chamar o
-módulo.
+O layout de texto do merman não roteia todo flowchart. Quando o diagrama,
+como está escrito, não desenha (aresta que cruza a borda de um subgraph, ou
+arestas de traços diferentes que se cruzam), o módulo tenta de novo sem o
+que o layout não sabe rotear: primeiro o traço das arestas (todas viram
+linha comum), depois as bordas dos subgraphs (os nós e as arestas ficam) e,
+por fim, os dois. O primeiro que desenha vence, e uma linha
+|hl-DeckleCodeNote| logo abaixo do desenho diz o que foi tirado (`layout
+simplified: ...`). Esse aviso não tem o prefixo `mermaid:`, que é só da
+degradação: o diagrama foi desenhado. Se nenhum desenha, vale a nota de erro
+do diagrama como o autor o escreveu. Veja |deckle-limitations|.
+
+Cada desenho fica guardado, por conteúdo, largura, charset e limite de
+linhas, em até 64 entradas, junto do aviso de layout simplificado.
+Re-renderizar o mesmo diagrama não volta a chamar o módulo.
+
+O arquivo `examples/mermaid.md`, do repositório, tem um diagrama grande de
+cada um dos 14 tipos, e é também um teste: a suíte exige que nenhum bloco
+dele degrade, salvo o `pie` da seção "Degradação esperada".
 
 ==============================================================================
 9. IMAGENS                                                     *deckle-images*
@@ -715,9 +730,38 @@ Tabelas e código
 Mermaid
 - Oito tipos saem como texto estruturado, e tipos como `pie` e `c4` caem para
   código (|deckle-mermaid|).
-- O merman está em alpha e quebra API entre versões, então o plugin pina a
-  versão exata. Um nó em losango, `{texto}`, num flowchart sai com a caixa
-  sobreposta: é um bug cosmético de layout do merman.
+- O merman quebra API entre versões (era alpha até a 0.8), então o plugin pina
+  a versão exata, hoje a 0.10.0. Um nó em losango, `{texto}`, num flowchart
+  sai com a caixa sobreposta: é um bug cosmético de layout do merman.
+- O layout de texto do merman não roteia tudo. O que foi medido na 0.10.0,
+  com a mensagem exata dele, e o que o deckle faz:
+  - Flowchart, aresta que cruza a borda de um subgraph (em geral a que pula
+    uma camada de subgraphs, ou a que sai de um subgraph para um nó solto):
+    `ASCII rendering does not support `routes crossing reserved graph
+    geometry` for `flowchart` yet` ou, no `graph LR` do mesmo caso, `...
+    `unroutable graph edges` ...`. O deckle desenha sem as bordas dos
+    subgraphs e avisa.
+  - Flowchart, arestas de traços diferentes (`-->`, `==>`, `-.->`) que se
+    cruzam: `... `mixed-stroke route junctions` ...`. O deckle desenha todas
+    como linha comum e avisa.
+  - Flowchart denso demais, com muitas arestas cruzadas entre camadas: `ASCII
+    resource limit `max_ascii_layout_work_units` exceeded during
+    `ascii_layout_work`: actual 4000031, maximum 4000000 (profile
+    `interactive`)`. O merman gasta o teto procurando uma rota que não
+    existe. O deckle sobe o teto dele de 2 para 4 milhões de unidades (~40 ms
+    no pior caso); acima disso o bloco degrada, com essa nota.
+  - Flowchart com muitos subgraphs de `direction` própria: `ASCII resource
+    limit `max_ascii_grid_cells` exceeded during `ascii_layout`: actual
+    688758, maximum 250000 (profile `interactive`)`. O deckle desenha sem as
+    bordas.
+  - State, estado composto fora da forma mais simples: `ASCII rendering does
+    not support `routes crossing reserved graph geometry` for `state` yet`.
+    Só desenha o composto em que o estado de fora entra, com `[*]` no começo
+    e no fim e saída para `[*]`. Composto com transição de volta, que sai
+    para outro estado, dois irmãos, composto dentro de composto, composto
+    sem `[*]` e concorrência com `--` degradam. Não há degrau de
+    simplificação para o `state`: estados simples, `<<choice>>`, `<<fork>>`,
+    `<<join>>`, notas e `classDef` desenham.
 - O diagrama de 200 linhas (o limite) no re-render de um documento grande não
   foi medido.
 - O binário só é carregado uma vez por sessão: reinicie o Neovim depois de
