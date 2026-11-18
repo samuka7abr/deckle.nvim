@@ -42,6 +42,10 @@ M.groups = {
   DeckleTableHeader = { link = "Title" },
   DeckleTableBorder = { link = "Comment" },
 
+  -- Diagrama mermaid desenhado pelo módulo nativo. Quando ele cai para código, a moldura e a
+  -- nota são os grupos `DeckleCode*` acima.
+  DeckleMermaid = { link = "Special" },
+
   -- Bloco que o render não conseguiu desenhar.
   DeckleError = { link = "WarningMsg" },
 }

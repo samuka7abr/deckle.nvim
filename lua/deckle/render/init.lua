@@ -184,6 +184,9 @@ end
 ---@return string[] lines, deckle.Mark[] marks
 function render_block(block, ctx)
   local name = type(block) == "table" and MODULES[block.kind] or nil
+  if name and block.kind == "code" and block.lang == "mermaid" then
+    name = "deckle.render.mermaid" -- fase 7; degrada para `code` por conta própria
+  end
   if not name then
     M.last_error = "unknown block kind: " .. tostring(type(block) == "table" and block.kind)
     return degraded(type(block) == "table" and block.kind or type(block))
