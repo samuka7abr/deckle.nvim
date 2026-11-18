@@ -94,6 +94,7 @@ local M = {}
 ---@class deckle.RenderOpts
 ---@field width integer|nil                         default 80
 ---@field charset "auto"|"unicode"|"ascii"|nil     default `"auto"`
+---@field images deckle.ImageSession|nil            provedor de imagens (fase 9); sem ele, a imagem é texto alternativo
 
 ---@class deckle.RenderResult
 ---@field lines string[]
@@ -107,6 +108,7 @@ local M = {}
 ---@field indent integer    células consumidas pelos contêineres ancestrais (informativo: largura da janela = `indent + width`)
 ---@field depth integer     profundidade de contêineres, 0 no topo
 ---@field list_level integer|nil  quantas listas envolvem o bloco (campo do módulo `list`)
+---@field images deckle.ImageSession|nil  provedor de imagens, herdado pelos filhos (fase 9)
 ---@field block fun(block: deckle.Block, consumed?: integer, extra?: table): string[], deckle.Mark[]
 
 M.MIN_WIDTH = util.MIN_WIDTH
@@ -213,6 +215,7 @@ function M.render(ir, opts)
     charset = M.resolve_charset(opts.charset),
     indent = 0,
     depth = 0,
+    images = opts.images,
   })
 
   local lines, marks, map = {}, {}, {}
