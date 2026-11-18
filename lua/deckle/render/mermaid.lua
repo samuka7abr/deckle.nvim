@@ -38,12 +38,22 @@
 --- código: não se quebra nem se trunca uma linha de diagrama, e a janela de preview não tem
 --- `wrap`, então ela rola na horizontal. Cortar desalinharia a caixa; reflow é coisa do merman.
 ---
+--- # Cor
+---
+--- Com `mermaid.colors` ligado (o padrão) e `charset = "unicode"`, o crate desenha em TrueColor
+--- (`opts.color = true`) e devolve só as cores que o diagrama pediu (`classDef`, `style`,
+--- `linkStyle`, `box rgb`, `rect rgb`): as cores de tema do merman são tiradas no Rust. Este
+--- módulo passa as linhas por `deckle.render.ansi`, que as devolve **sem nenhum escape** e com
+--- as marcas de cor (grupos de highlight criados sob demanda). O texto sem cor própria continua
+--- em `DeckleMermaid`. Com `colors = false` ou `charset = "ascii"` a saída é a de sempre.
+---
 --- # Cache
 ---
 --- Diagrama grande custa 46 ms (V5) e o preview renderiza de novo a cada edição e a cada
 --- mudança de largura, então o desenho fica guardado. A chave é o SHA-256 de (conteúdo do
---- bloco, largura, charset, `max_src_lines`, `diagram_ty`): as duas últimas mudam o resultado e
---- entram para a chave não servir um erro de "grande demais" depois de o limite subir.
+--- bloco, largura, charset, `max_src_lines`, `diagram_ty`, se tem cor): as três últimas mudam o
+--- resultado e entram para a chave não servir um erro de "grande demais" depois de o limite
+--- subir, nem um desenho colorido depois de `mermaid.colors` ser desligado.
 ---
 --- LRU simples com limite de `M.cache_limit` entradas. Guarda também o erro do render, que é
 --- determinístico para a mesma chave e tão caro de recalcular quanto um sucesso. **Não** guarda
@@ -79,7 +89,8 @@ local NOTE_PREFIX = "mermaid: "
 -- ---------------------------------------------------------------------------------------
 
 ---@class deckle.MermaidDrawing
----@field lines string[]
+---@field lines string[]          o desenho, sem nenhum escape
+---@field marks deckle.Mark[]     as cores do diagrama (vazio sem `mermaid.colors` ou sem estilo)
 ---@field simplified string|nil  o que o crate achatou (`"subgraphs"`), ou `nil` se o desenho é fiel
 ---@field cause string|nil       a mensagem do merman que motivou a simplificação
 
@@ -154,6 +165,48 @@ local function copy(lines)
   return vim.list_slice(lines, 1, #lines)
 end
 
+--- As marcas de cor ganham do `DeckleMermaid` (que cobre a linha toda, com a prioridade padrão do
+--- extmark, 4096): `fg` e `bg` do diagrama sobrepõem o `Special` de base.
+local COLOR_PRIORITY = 4100
+
+--- Tira os escapes SGR das linhas que o crate devolveu em TrueColor e as transforma em marcas.
+---
+--- Quem entende o SGR é `deckle.render.ansi` (`parse(lines) -> clean_lines, marks`). Se ele não
+--- existe ou falha, o desenho sai sem cor: os escapes são tirados com um `gsub`, e nenhum
+--- escape chega ao buffer. Linhas sem escape (diagrama sem estilo) nem passam por ele.
+---@param lines string[]
+---@return string[] clean, deckle.Mark[] marks
+local function split_colors(lines)
+  local has_escape = false
+  for _, line in ipairs(lines) do
+    if line:find("\27", 1, true) then
+      has_escape = true
+      break
+    end
+  end
+  if not has_escape then
+    return lines, {}
+  end
+
+  local ok, ansi = pcall(require, "deckle.render.ansi")
+  if ok and type(ansi) == "table" and type(ansi.parse) == "function" then
+    local parsed, clean, marks = pcall(ansi.parse, lines)
+    if parsed and type(clean) == "table" then
+      for _, mark in ipairs(marks or {}) do
+        mark.priority = mark.priority or COLOR_PRIORITY
+      end
+      return clean, marks or {}
+    end
+  end
+
+  local clean = {}
+  for i, line in ipairs(lines) do
+    -- `ESC [ <números e ;> m`: o que o merman emite. Qualquer outro escape não é nosso.
+    clean[i] = (line:gsub("\27%[[%d;:]*m", ""))
+  end
+  return clean, {}
+end
+
 --- Chama o crate. Devolve o desenho, ou `nil` e a mensagem do erro.
 ---
 --- Usa `render_ex` (`{ lines, simplified?, cause? }`) quando o módulo a tem, e `render` (só as
@@ -175,8 +228,13 @@ local function call_native(mod, src, opts)
   if type(lines) ~= "table" or type(lines[1]) ~= "string" then
     return nil, "the native renderer returned no lines"
   end
+  local marks = {}
+  if opts.color then
+    lines, marks = split_colors(lines)
+  end
   return {
     lines = lines,
+    marks = marks,
     simplified = type(simplified) == "string" and simplified or nil,
     cause = type(cause) == "string" and cause or nil,
   }
@@ -186,8 +244,19 @@ end
 ---@param drawing deckle.MermaidDrawing
 ---@return deckle.MermaidDrawing
 local function copy_drawing(drawing)
+  local marks = {}
+  for i, mark in ipairs(drawing.marks) do
+    marks[i] = {
+      row = mark.row,
+      col = mark.col,
+      end_col = mark.end_col,
+      hl = mark.hl,
+      priority = mark.priority,
+    }
+  end
   return {
     lines = copy(drawing.lines),
+    marks = marks,
     simplified = drawing.simplified,
     cause = drawing.cause,
   }
@@ -211,20 +280,29 @@ local function draw(block, ctx)
   end
 
   local source = block.lines or {}
-  local max_lines = require("deckle.config").options.mermaid.max_src_lines
+  local options = require("deckle.config").options.mermaid
+  local max_lines = options.max_src_lines
   local opts = {
     width = ctx.width,
     charset = ctx.charset,
     diagram_ty = type(block.diagram_ty) == "string" and block.diagram_ty or nil,
     max_src_lines = max_lines,
+    -- Cor só com Unicode: em ASCII (`TERM=linux`, `dumb`) a saída é a de sempre, texto puro. A
+    -- chave não existe quando não há cor, e o crate trata a ausência como `false`.
+    color = (options.colors and ctx.charset ~= "ascii") or nil,
   }
   local src = table.concat(source, "\n")
 
   local key
   if #source <= max_lines then
-    key = sha256.hex(
-      table.concat({ opts.width, opts.charset, max_lines, opts.diagram_ty or "", src }, "\0")
-    )
+    key = sha256.hex(table.concat({
+      opts.width,
+      opts.charset,
+      max_lines,
+      opts.diagram_ty or "",
+      opts.color and "color" or "plain",
+      src,
+    }, "\0"))
     local entry = recall(key)
     if entry then
       hits = hits + 1
@@ -297,6 +375,9 @@ function M.render(block, ctx)
         marks[#marks + 1] = { row = row - 1, col = 0, end_col = #line, hl = "DeckleMermaid" }
       end
     end
+    -- As cores do diagrama vão por cima do `DeckleMermaid`, que continua sendo o de todo texto
+    -- sem cor própria.
+    vim.list_extend(marks, drawing.marks)
     M.last_simplified = drawing.cause
     if drawing.simplified then
       -- O desenho é arte, mas não é fiel: a nota diz isso, na largura do bloco.
