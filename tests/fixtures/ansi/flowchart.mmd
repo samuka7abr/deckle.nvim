@@ -1,0 +1,11 @@
+flowchart LR
+  classDef ok fill:#ff8800,stroke:#1e1e2e,color:#1e1e2e
+  classDef err fill:#cc3333,stroke:#ffffff,color:#ffffff
+  A[Início]:::ok --> B{Válido?}
+  B -->|sim| C[Salvar]
+  B -->|não| D[Erro]:::err
+  C --> E([Fim])
+  D --> E
+  style C fill:#0088ff,stroke:#003366,color:#ffffff
+  linkStyle 1 stroke:#00ff88,stroke-width:3px
+  linkStyle 2 stroke:#ff3366

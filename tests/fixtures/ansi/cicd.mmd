@@ -1,0 +1,56 @@
+flowchart LR
+    classDef ok fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724
+    classDef warn fill:#fff3cd,stroke:#ffc107,color:#856404
+    classDef bad fill:#f8d7da,stroke:#dc3545,stroke-dasharray: 5 5
+    classDef cjk fill:#e8eaf6,stroke:#3949ab
+
+    DEV(["👩‍💻 Dev\nabre PR"]):::ok
+
+    subgraph CI["⚙️ Integração contínua"]
+        direction TB
+        LINT["Lint\n(stylua · selene)"]:::ok
+        subgraph TESTES["🧪 Testes"]
+            direction LR
+            UNIT["Unitários"]
+            INTEG["Integração"]
+            E2E["E2E\n(headless)"]:::warn
+        end
+        BUILD[["Build do .so"]]
+        LINT --> UNIT
+        UNIT --> INTEG --> E2E
+        E2E --> BUILD
+    end
+
+    subgraph CD["🚀 Entrega"]
+        direction TB
+        subgraph MATRIZ["Matriz de plataformas"]
+            direction LR
+            LNX[(Linux)]
+            MAC[(macOS)]
+            WIN[(Windows)]
+        end
+        SUM{{"Checksums\nSHA-256"}}
+        REL>"Release v0.3"]:::ok
+        MATRIZ --> SUM --> REL
+    end
+
+    subgraph I18N["🌏 国際化"]
+        direction LR
+        JA["日本語"]:::cjk
+        ZH["中文"]:::cjk
+        PT["Português"]:::cjk
+        JA --- ZH --- PT
+    end
+
+    DEV -->|push| LINT
+    BUILD -->|artefato| MATRIZ
+    REL -.->|docs| I18N
+
+    style DEV stroke-width:4px
+    style BUILD fill:#e1f5fe,stroke:#0288d1
+    linkStyle 0 stroke:#28a745,stroke-width:3px,color:green
+    linkStyle 1,2 stroke:#ff9800
+    linkStyle default stroke:#666
+
+    click LINT href "https://github.com/JohnnyMorganz/StyLua" "StyLua"
+    click REL callback "tooltip da release"
