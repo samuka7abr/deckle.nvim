@@ -797,6 +797,37 @@ neste PR. O que difere do esboço acima ou vai além:
 
 ---
 
+## Pós-v0.3.0 — Mermaid: merman 0.8.0, subgraphs, entidades e cor
+
+Fora das dez fases: um PR corretivo (`fix/mermaid-showcase`, a partir da `main` na v0.3.0) que
+nasceu de dois diagramas reais do usuário (o ILZA) que o preview não desenhava. Sem tag nem
+mudança em `lua/deckle/version.lua`: a versão sai quando o mantenedor decidir.
+
+**Entregue**
+
+- **merman `=0.8.0`** nos dois crates, com `features = ["all-diagrams"]`, e o 15º tipo,
+  `swimlane`. A `0.10.0` regride o roteamento e não entrou (ADR-0002, V11).
+- **Fallback de achatamento** (`flatten.rs`, `render_ex`): erro de roteamento de subgraph em
+  flowchart e state vira o mesmo diagrama sem as caixas dos grupos, com a nota
+  `mermaid: layout simplified (subgraphs flattened)`. Os dois diagramas do ILZA desenham.
+- **Limpeza de saída** (`clean.rs`): `&lt;`, `&gt;`, `&amp;`, `&quot;` e `&#39;` decodificados
+  nas linhas prontas, sem mexer na largura.
+- **Cor**: `mermaid.colors` (padrão `true`); o crate desenha em TrueColor e devolve só as cores
+  que o diagrama pediu, e o Lua passa o SGR pelo `render/ansi.lua`.
+
+**Desvios**
+
+- O `bytes=` de ER, class e xychart não foi filtrado: é um mecanismo de divulgação do texto
+  autoral do merman-ascii, sem opção que o desligue. Ficou como limitação (V11).
+- O `&#39;` não tem conserto na saída: o merman o consome como `#39;`.
+- Em TrueColor o merman pinta tudo com um tema claro; o crate o neutraliza com uma cor-sentinela
+  em vez de usar a paleta dele.
+
+**Fora desta branch**: o `examples/mermaid.md` (showcase por tipo) e o `render/ansi.lua` (parser
+de SGR e grupos de highlight) vivem em `feat/mermaid-ansi-showcase`.
+
+---
+
 ## Dependências entre fases
 
 ```
