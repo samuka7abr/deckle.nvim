@@ -1,0 +1,79 @@
+graph LR
+    subgraph app["app/"]
+        direction TB
+        APP_PY["app.py\n(create_app)"]
+
+        subgraph shared["shared/"]
+            SETTINGS["Settings"]
+            DB_CONN["DB Connection"]
+            EXCEPTIONS["Domain Exceptions"]
+            MIDDLEWARES["CORS · Rate Limit"]
+        end
+
+        subgraph auth["modules/auth/"]
+            A_PRES["Presentation\nController · DTOs"]
+            A_APP["Application\nUse Cases"]
+            A_DOMAIN["Domain\nEntities · VOs · Interfaces"]
+            A_INFRA["Infrastructure\nRepositories · Services"]
+        end
+
+        subgraph patients["modules/patients/"]
+            P_PRES["Presentation\nController · DTOs"]
+            P_APP["Application\nUse Cases"]
+            P_DOMAIN["Domain\nEntities · VOs · Interfaces"]
+            P_INFRA["Infrastructure\nRepositories · Models"]
+        end
+    end
+
+    subgraph ai["ai/"]
+        direction TB
+        subgraph core["core/ (Interfaces)"]
+            I_ENGINE["ITriageEngine"]
+            I_RESPONSE["AgentResponse\nSessionState"]
+            BASE_AGENT["BaseAgent\nRawAgentResult"]
+        end
+
+        subgraph agents["agents/"]
+            TRIAGE["TriageAgent"]
+            SPECIALIST["SpecialistAgent"]
+            TYPES["Response Types"]
+        end
+
+        subgraph support["Suporte"]
+            PROMPTS_MOD["prompts/"]
+            GUARDRAILS_MOD["guardrails/"]
+            SESSION_MOD["session/"]
+            TOOLS_MOD["tools/"]
+        end
+
+        AI_ENGINE["engine.py\nTriageEngine"]
+        AI_DI["di.py\nFactory DI"]
+
+        subgraph workflows["workflows/"]
+            WF["TriageWorkflow"]
+            WK["Worker"]
+        end
+    end
+
+    A_PRES --> A_APP --> A_DOMAIN
+    A_APP --> A_INFRA
+    P_PRES --> P_APP --> P_DOMAIN
+    P_APP --> P_INFRA
+
+    AI_DI --> AI_ENGINE
+    AI_ENGINE --> TRIAGE
+    AI_ENGINE --> SPECIALIST
+    TRIAGE --> PROMPTS_MOD
+    SPECIALIST --> PROMPTS_MOD
+    AI_ENGINE --> GUARDRAILS_MOD
+    AI_ENGINE --> SESSION_MOD
+    SPECIALIST --> TOOLS_MOD
+    WF --> AI_ENGINE
+
+    classDef appColor fill:#fff3e0,stroke:#e65100,color:#bf360c
+    classDef aiColor fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+    classDef coreColor fill:#e8eaf6,stroke:#283593,color:#1a237e
+
+    class APP_PY,SETTINGS,DB_CONN,EXCEPTIONS,MIDDLEWARES,A_PRES,A_APP,A_DOMAIN,A_INFRA,P_PRES,P_APP,P_DOMAIN,P_INFRA appColor
+    class TRIAGE,SPECIALIST,TYPES,PROMPTS_MOD,GUARDRAILS_MOD,SESSION_MOD,TOOLS_MOD,AI_ENGINE,AI_DI,WF,WK aiColor
+    class I_ENGINE,I_RESPONSE,BASE_AGENT coreColor
