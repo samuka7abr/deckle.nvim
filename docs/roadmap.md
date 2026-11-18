@@ -665,6 +665,62 @@ O que difere do plano acima ou vai além dele:
 **Risco:** é a fase com maior chance de ser cortada. Se custar mais do que vale, a camada 2
 fica para depois da v1.0 e o plugin continua íntegro. Camada 0 e 1 não dependem dela.
 
+**Entregue.** A fase foi cortada ao que dá para entregar íntegro e testado: detecção completa,
+**imagem só pelo protocolo do kitty**. O contrato de `lua/deckle/caps.lua` (detecção), de
+`lua/deckle/image/` (protocolo, PNG, estado) e de `lua/deckle/render/image.lua` (gancho do render)
+está em LuaCATS no topo de cada um; os testes são `tests/test_caps.lua`, `tests/test_image.lua` e
+`tests/test_preview_images.lua`. O que difere do esboço acima ou vai além:
+
+- **`caps.detect(env, opts)` é pura**, de uma tabela de ambiente, e devolve `{ layer, graphics,
+  reason, terminal, multiplexer, remote }`. `layer` é o que o *terminal* deixa subir (0 burro:
+  `TERM` ausente, `dumb` ou `linux`; 1 texto; 2 há protocolo gráfico), não a camada do plugin.
+  `graphics` é o protocolo que o terminal fala: `"kitty"` (kitty e ghostty), `"iterm2"` (iTerm2 e
+  WezTerm) e `"sixel"` (foot, mlterm, contour). `caps.current()` é a cola com o ambiente real,
+  memoizada, e `caps.set_override` é o gancho dos testes. Na dúvida, sem gráfico: tmux só com
+  `allow-passthrough` **confirmado** (consulta ao `tmux show-options`) e o terminal de fora
+  reconhecido por variável que não seja `TERM`/`TERM_PROGRAM` (que no tmux mentem); SSH, GNU screen
+  e terminal burro, nada. `images.enabled = true` levanta as barras do tmux e do SSH, e **só** elas:
+  não inventa um protocolo para terminal não reconhecido, nem salva um `TERM=dumb`.
+- **Config nova** `images = { enabled = "auto" | true | false, max_height = 20 }`, validada.
+- **Abordagem: Unicode placeholders** (`U+10EEEE` com diacríticos de linha e coluna, id da imagem
+  na cor do primeiro plano), e não o posicionamento por coordenada. O placeholder é texto: o
+  Neovim o rola e o redesenha com o buffer, então a parte difícil do roadmap (reposicionar no
+  scroll) **não existe**. A sincronia de scroll da fase 3 não mudou: o bloco da imagem é um bloco
+  do mapa com N linhas. O custo é outro: o id cabe em um byte (ids de 16 a 255, 240 imagens por
+  vez; de 16 em diante o Neovim escreve o id como `38;5;<id>`, a forma da documentação do kitty),
+  cada imagem ganha um grupo `DeckleImg<id>` com o id na cor, e um `CursorLine` com `fg` pode
+  estragá-lo. O tamanho da célula em pixels não está na API do Neovim: o deckle supõe 10 x 20 para
+  decidir quantas linhas reservar, e o kitty encaixa a imagem no retângulo mantendo a proporção.
+- **O que vira imagem:** só o parágrafo que é **uma imagem sozinha**, PNG **local** (caminho
+  relativo ao fonte, absoluto ou `~/`; `%20` decodificado). URL, `data:`, JPEG, SVG, arquivo
+  ausente, grande demais ou com cabeçalho que não é de PNG viram `[image: alt]`, sem erro. Imagem no
+  meio de texto, dentro de link (selo), em item de lista ou ao lado de outra imagem continua texto
+  alternativo. As dimensões saem do `IHDR`, sem decodificar nada.
+- **Transmissão:** por caminho (`t=f`) quando o terminal lê o disco desta máquina; pelos bytes,
+  em pedaços de 4096 de base64 (`t=d`), numa sessão remota com opt-in (teto de 4 MiB). `q=2` em
+  todo escape: nenhuma resposta do terminal cai na entrada do Neovim. Dentro do tmux, cada escape
+  sai em `DCS tmux;`.
+- **Toda escrita no terminal passa por uma função** (`image.set_writer`). O padrão escreve em
+  `vim.v.stderr` (que, com TUI, é o tty; o stdout é o RPC) e **só** com uma UI de terminal
+  (`stdout_tty`) ligada: nos testes, em headless, nada vai ao terminal real.
+- **Ciclo de vida:** o id de uma imagem é estável entre renders enquanto arquivo e tamanho não
+  mudam, então editar o texto não retransmite nada. Fechar o preview (`:Deckle close`, `:close` na
+  janela, apagar o fonte) manda `a=d,d=I,i=<id>` por imagem (só as do deckle, nunca `d=a`), que
+  também libera a memória do terminal; `VimLeavePre` apaga o que sobrou. `:Deckle refresh`
+  retransmite (o terminal pode ter perdido as imagens).
+- **`:checkhealth`** ganhou a seção "Terminal graphics": a camada, o protocolo e o motivo.
+- **Fora desta fase:** **iTerm2 e sixel** são detectados e renderizam texto alternativo (a saída
+  de `health` diz "not supported yet"); mais de uma imagem por parágrafo; imagem remota e outros
+  formatos; leitura do tamanho real da célula; `WinScrolled` (não é preciso); camada 3 (`mmdc`).
+- **Não foi validado em terminal real:** o desenho no kitty, no ghostty (que implementa o
+  protocolo, Unicode placeholders inclusive, mas não foi aberto) e no tmux com passthrough. O que
+  foi verificado é o que sai do Neovim: num Neovim com TUI dentro de um pty, o `:Deckle open`
+  escreve no tty os escapes de transmitir e posicionar, o Neovim emite as células com o id em
+  `38;5;16m` (256 cores) e `38:2:0:0:16m` (`termguicolors`) e o `:Deckle close` escreve o delete.
+  O que um kitty de verdade faz com isso, a proporção com a célula real, `CursorLine` com `fg`,
+  rolagem horizontal da janela e o redraw parcial do Neovim sobre células de placeholder ficam
+  sem medida.
+
 ---
 
 ## Fase 10 — Documentação e polimento

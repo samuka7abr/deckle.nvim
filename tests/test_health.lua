@@ -271,4 +271,94 @@ T["binário nativo"]["um erro dentro do instalador não derruba o checkhealth"] 
   eq(text:match("boom") ~= nil, true)
 end
 
+-- ---------------------------------------------------------------------------------------
+-- Gráficos do terminal (fase 9): a camada detectada e o motivo
+-- ---------------------------------------------------------------------------------------
+
+T["gráficos"] = new_set()
+
+--- Forja o ambiente que a detecção enxerga.
+---@param env table<string, string>
+---@param passthrough boolean|nil
+local function forge(env, passthrough)
+  child.lua([[require("deckle.caps").set_override(...)]], { env, passthrough })
+end
+
+T["gráficos"]["kitty: diz a camada 2, o protocolo e o motivo"] = function()
+  forge({ TERM = "xterm-kitty", KITTY_WINDOW_ID = "1" })
+  local text = report()
+  eq(text:match("Terminal graphics") ~= nil, true)
+  eq(text:match("layer 2") ~= nil, true)
+  eq(text:match("kitty graphics protocol") ~= nil, true)
+  eq(text:match("KITTY_WINDOW_ID is set") ~= nil, true)
+  eq(text:match("WARNING") ~= nil, false)
+  eq(text:match("ERROR") ~= nil, false)
+end
+
+T["gráficos"]["terminal sem protocolo: diz o motivo e que a imagem vira texto alternativo, sem warning"] = function()
+  forge({ TERM = "xterm-256color" })
+  local text = report()
+  eq(text:match("Terminal graphics") ~= nil, true)
+  eq(text:match("terminal layer 1") ~= nil, true)
+  eq(text:match("no graphics protocol identified") ~= nil, true)
+  eq(text:match("alt text") ~= nil, true)
+  eq(text:match("kitty graphics protocol") ~= nil, false)
+  eq(text:match("WARNING") ~= nil, false)
+  eq(text:match("ERROR") ~= nil, false)
+end
+
+T["gráficos"]["terminal burro: camada 0 do terminal e o motivo"] = function()
+  forge({ TERM = "dumb" })
+  local text = report()
+  eq(text:match("terminal layer 0") ~= nil, true)
+  eq(text:match("dumb terminal") ~= nil, true)
+end
+
+T["gráficos"]["tmux mentindo: diz que o passthrough não está confirmado"] = function()
+  forge({ TERM = "xterm-kitty", TMUX = "/tmp/tmux-1000/default,1,0" })
+  local text = report()
+  eq(text:match("inside tmux") ~= nil, true)
+  eq(text:match("alt text") ~= nil, true)
+  eq(text:match("kitty graphics protocol") ~= nil, false)
+end
+
+T["gráficos"]["SSH: diz que o terminal local não é confirmado e como assumir"] = function()
+  forge({ TERM = "xterm-kitty", SSH_CONNECTION = "10.0.0.2 5000 10.0.0.1 22" })
+  local text = report()
+  eq(text:match("SSH session") ~= nil, true)
+  eq(text:match("images%.enabled = true") ~= nil, true)
+end
+
+T["gráficos"]["iTerm2 detectado, ainda não desenhado: diz isso"] = function()
+  forge({ TERM = "xterm-256color", TERM_PROGRAM = "iTerm.app" })
+  local text = report()
+  eq(text:match("iterm2 protocol detected") ~= nil, true)
+  eq(text:match("not supported yet") ~= nil, true)
+  eq(text:match("alt text") ~= nil, true)
+  eq(text:match("WARNING") ~= nil, false)
+end
+
+T["gráficos"]["`images.enabled = false` aparece no relatório"] = function()
+  forge({ TERM = "xterm-kitty", KITTY_WINDOW_ID = "1" })
+  child.lua([[require("deckle").setup({ images = { enabled = false } })]])
+  local text = report()
+  eq(text:find("images.enabled = false", 1, true) ~= nil, true)
+  eq(text:match("alt text") ~= nil, true)
+end
+
+T["gráficos"]["`images.enabled = true` assume o SSH e o relatório mostra"] = function()
+  forge({ TERM = "xterm-kitty", SSH_CONNECTION = "10.0.0.2 5000 10.0.0.1 22" })
+  child.lua([[require("deckle").setup({ images = { enabled = true } })]])
+  local text = report()
+  eq(text:match("kitty graphics protocol") ~= nil, true)
+  eq(text:match("SSH session assumed") ~= nil, true)
+end
+
+T["gráficos"]["um erro na detecção não derruba o checkhealth"] = function()
+  child.lua([[package.loaded["deckle.image"] = { status = function() error("boom") end }]])
+  local text = report()
+  eq(text:match("could not detect the terminal graphics") ~= nil, true)
+  eq(text:match("boom") ~= nil, true)
+end
+
 return T

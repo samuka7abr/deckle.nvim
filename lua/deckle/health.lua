@@ -205,12 +205,42 @@ local function check_native_binary()
   end
 end
 
+--- Protocolo gráfico do terminal (fase 9, camada 2): o que foi detectado e por quê. Tudo aqui é
+--- `info`: terminal sem gráfico é o caso comum e nada está quebrado, o texto alternativo é o
+--- comportamento desenhado.
+local function check_graphics()
+  health.start("Terminal graphics")
+
+  local ok, status = pcall(function()
+    -- Detecção nova: o `allow-passthrough` do tmux pode ter sido ligado depois do primeiro render.
+    require("deckle.caps").reset()
+    return require("deckle.image").status()
+  end)
+  if not ok then
+    health.warn("could not detect the terminal graphics: " .. tostring(status))
+    return
+  end
+
+  if status.protocol then
+    health.ok("layer 2 — " .. status.protocol .. " graphics protocol: " .. status.reason)
+    health.info("an image alone in its paragraph (a local PNG file) renders as a picture")
+    return
+  end
+  if status.caps then
+    health.info(string.format("terminal layer %d: %s", status.caps.layer, status.reason))
+  else
+    health.info(status.reason)
+  end
+  health.info("images render as alt text")
+end
+
 function M.check()
   check_neovim()
   check_parsers()
   check_config()
   check_layer()
   check_native_binary()
+  check_graphics()
 end
 
 return M

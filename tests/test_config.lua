@@ -26,6 +26,7 @@ T["defaults"]["são os valores do roadmap"] = function()
   eq(d.debounce_ms, 120)
   eq(d.native, { enabled = true })
   eq(d.mermaid, { max_src_lines = 200 })
+  eq(d.images, { enabled = "auto", max_height = 20 })
 end
 
 T["defaults"]["`defaults()` devolve cópia, não a tabela viva"] = function()
@@ -133,6 +134,46 @@ T["validação"]["recusa max_src_lines não-positivo"] = function()
   expect_error(function()
     config.setup({ mermaid = { max_src_lines = 0 } })
   end, "mermaid.max_src_lines: expected a positive integer")
+end
+
+T["validação"]["images: aceita auto, true e false"] = function()
+  for _, value in ipairs({ "auto", true, false }) do
+    eq(fresh().setup({ images = { enabled = value } }).images.enabled, value)
+  end
+end
+
+T["validação"]["images: recusa `enabled` fora de auto/true/false"] = function()
+  local config = fresh()
+  for _, value in ipairs({ "yes", "on", 1, 0 }) do
+    expect_error(function()
+      config.setup({ images = { enabled = value } })
+    end, 'images.enabled: expected one of "auto", true or false')
+  end
+end
+
+T["validação"]["images: `max_height` é inteiro positivo"] = function()
+  local config = fresh()
+  for _, value in ipairs({ 0, -3, 2.5, "20" }) do
+    expect_error(function()
+      config.setup({ images = { max_height = value } })
+    end, "images.max_height: expected a positive integer")
+  end
+  eq(fresh().setup({ images = { max_height = 8 } }).images.max_height, 8)
+end
+
+T["validação"]["images: mescla fundo sem derrubar a chave irmã"] = function()
+  local opts = fresh().setup({ images = { enabled = false } })
+  eq(opts.images, { enabled = false, max_height = 20 })
+end
+
+T["validação"]["images: recusa chave desconhecida e valor que não é tabela"] = function()
+  local config = fresh()
+  expect_error(function()
+    config.setup({ images = { enable = true } })
+  end, "unknown option in `images`")
+  expect_error(function()
+    config.setup({ images = true })
+  end, "images: expected table")
 end
 
 T["validação"]["recusa argumento que não é tabela"] = function()
