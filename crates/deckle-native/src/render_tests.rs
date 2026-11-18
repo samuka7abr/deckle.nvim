@@ -4,7 +4,8 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use crate::render::{
-    guarded, render, supported_types, Charset, RenderError, RenderOptions, DEFAULT_MAX_SRC_LINES,
+    guarded, render, render_ex, supported_types, Charset, RenderError, RenderOptions, Simplified,
+    DEFAULT_MAX_SRC_LINES,
 };
 
 /// Um diagrama minimo por familia que `ascii_supported_diagram_types()` anuncia. A chave e o
@@ -442,6 +443,204 @@ fn families_without_a_compact_profile_still_render_when_too_wide() {
     let src = "classDiagram\n  class Animal\n  class Duck\n  Animal <|-- Duck";
     let lines = render(src, &RenderOptions { width: 3, ..opts() }).unwrap();
     assert!(!lines.is_empty());
+}
+
+// --- fallback de achatamento (V11) ---------------------------------------------------------
+
+/// Os diagramas reais do usuario (ILZA). Nenhuma versao do merman os roteia: erro
+/// `routes crossing reserved graph geometry`.
+const ILZA_ARCHITECTURE: &str = include_str!("../tests/fixtures/ilza_architecture.mmd");
+const ILZA_MODULES: &str = include_str!("../tests/fixtures/ilza_modules.mmd");
+
+/// Menor flowchart que o merman 0.8.0 nao roteia (`ddmin` da investigacao V11): uma aresta que
+/// sai de um subgraph e entra no PRIMEIRO no de outro.
+const SUBGRAPH_EDGE_FAILS: &str = "flowchart TB\n  subgraph API\n    h1[h1]\n  end\n  subgraph Temporal\n    t1[t1]\n    t2[t2]\n  end\n  API --> t1";
+
+/// A mesma forma, com a aresta no segundo no: o merman roteia, e o fallback nao pode rodar.
+const SUBGRAPH_EDGE_WORKS: &str = "flowchart TB\n  subgraph API\n    h1[h1]\n  end\n  subgraph Temporal\n    t1[t1]\n    t2[t2]\n  end\n  API --> t2";
+
+#[test]
+fn the_merman_really_fails_on_the_minimal_subgraph_edge() {
+    // Guarda do pino: se o merman passar a rotear este caso, o fallback nao tem mais o que
+    // consertar nele e este teste avisa, para a investigacao V11 ser refeita.
+    let err = draw_without_fallback(SUBGRAPH_EDGE_FAILS);
+    assert!(
+        err.to_string()
+            .contains("routes crossing reserved graph geometry"),
+        "{err}"
+    );
+}
+
+fn draw_without_fallback(src: &str) -> RenderError {
+    // Renderiza o mesmo diagrama sem o fallback: o texto original pelo `render_model`.
+    match crate::render::render_unflattened(src, &opts()) {
+        Ok(lines) => panic!("era para falhar, saiu:\n{}", lines.join("\n")),
+        Err(err) => err,
+    }
+}
+
+#[test]
+fn minimal_subgraph_failure_renders_flattened_and_says_so() {
+    let rendered = render_ex(SUBGRAPH_EDGE_FAILS, &opts()).expect("o fallback tem que desenhar");
+    assert_eq!(rendered.simplified, Some(Simplified::Subgraphs));
+    assert!(
+        rendered
+            .cause
+            .as_deref()
+            .is_some_and(|c| c.contains("routes crossing reserved graph geometry")),
+        "{:?}",
+        rendered.cause
+    );
+    let text = rendered.lines.join("\n");
+    for needle in ["API", "h1", "t1", "t2"] {
+        assert!(text.contains(needle), "faltou {needle}:\n{text}");
+    }
+    // `render` devolve as mesmas linhas, so que sem a informacao.
+    assert_eq!(
+        render(SUBGRAPH_EDGE_FAILS, &opts()).unwrap(),
+        rendered.lines
+    );
+}
+
+#[test]
+fn both_ilza_diagrams_render_through_the_fallback() {
+    for (name, src) in [
+        ("architecture", ILZA_ARCHITECTURE),
+        ("modules", ILZA_MODULES),
+    ] {
+        let rendered = render_ex(src, &opts()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(rendered.simplified, Some(Simplified::Subgraphs), "{name}");
+        assert!(
+            rendered.lines.len() > 20,
+            "{name}: {} linhas",
+            rendered.lines.len()
+        );
+        // Os nos continuam la, com os rotulos.
+        let text = rendered.lines.join("\n");
+        let probes: &[&str] = if name == "architecture" {
+            &["Frontend", "TriageEngine", "PostgreSQL 16"]
+        } else {
+            &["TriageAgent", "Settings", "engine.py"]
+        };
+        for needle in probes {
+            assert!(text.contains(needle), "{name}: faltou {needle}");
+        }
+        // O desenho e deterministico.
+        assert_eq!(render_ex(src, &opts()).unwrap(), rendered, "{name}");
+    }
+}
+
+#[test]
+fn ilza_architecture_keeps_the_subgraph_endpoints_as_nodes() {
+    // `FE -->|"HTTP/REST"| API` e `API --> ENGINE` citam o subgraph `API`: ele vira um no com o
+    // titulo, em vez de a aresta sumir.
+    let text = render(ILZA_ARCHITECTURE, &opts()).unwrap().join("\n");
+    assert!(text.contains("FastAPI"), "{text}");
+    assert!(text.contains("HTTP/REST"), "{text}");
+    // `Cliente` e `Modulos da Aplicacao` nao sao ponta de aresta nenhuma: somem com a caixa.
+    assert!(!text.contains("Cliente"), "{text}");
+}
+
+#[test]
+fn fallback_does_not_run_when_the_first_render_works() {
+    let rendered = render_ex(SUBGRAPH_EDGE_WORKS, &opts()).unwrap();
+    assert_eq!(rendered.simplified, None);
+    assert_eq!(rendered.cause, None);
+    // Fiel: as caixas dos subgraphs estao no desenho (o titulo `Temporal` so existe nelas).
+    let text = rendered.lines.join("\n");
+    assert!(text.contains("Temporal"), "{text}");
+
+    // Diagramas sem subgraph nunca simplificam.
+    for (_, src) in MINIMAL {
+        assert_eq!(render_ex(src, &opts()).unwrap().simplified, None, "{src}");
+    }
+}
+
+#[test]
+fn fallback_ignores_errors_that_are_not_routing_failures() {
+    // Sintaxe invalida com subgraph: continua erro de parse, sem tentativa de achatar.
+    let err = err_of("flowchart TD\n  subgraph S\n    A -->\n  end", &opts());
+    assert!(matches!(err, RenderError::Parse(_)), "{err:?}");
+
+    // Forma que o renderer nao cobre, dentro de subgraph: o erro e o da forma, nao o do layout.
+    let src = "flowchart TD\n  subgraph S\n    A@{ shape: cloud }\n  end";
+    let err = err_of(src, &opts());
+    assert!(
+        err.to_string().contains("shape"),
+        "o erro deveria ser o da forma: {err}"
+    );
+}
+
+#[test]
+fn routing_failure_classifier_only_matches_routing_messages() {
+    use crate::render::is_routing_failure;
+    for msg in [
+        "unsupported diagram: ASCII rendering does not support `routes crossing reserved graph geometry` for `flowchart` yet",
+        "mermaid render failed: unroutable graph edges",
+    ] {
+        let err = if msg.starts_with("unsupported") {
+            RenderError::Unsupported(msg.into())
+        } else {
+            RenderError::Render(msg.into())
+        };
+        assert!(is_routing_failure(&err), "{msg}");
+    }
+    assert!(!is_routing_failure(&RenderError::Parse(
+        "routes crossing reserved graph geometry".into()
+    )));
+    assert!(!is_routing_failure(&RenderError::Unsupported(
+        "diagram type `pie`".into()
+    )));
+    assert!(!is_routing_failure(&RenderError::EmptySource));
+}
+
+#[test]
+fn nested_composite_state_renders_flattened() {
+    // O caso medido na investigacao: composto dentro de composto, com transicao. O merman
+    // erra o roteamento; o fallback tira as chaves.
+    let src = "stateDiagram-v2\n  state Fora {\n    state Dentro {\n      [*] --> X\n    }\n    [*] --> Dentro\n  }";
+    let rendered = render_ex(src, &opts()).expect("o fallback tem que desenhar");
+    assert_eq!(rendered.simplified, Some(Simplified::CompositeStates));
+    assert!(rendered.lines.join("\n").contains('X'));
+}
+
+// --- depuracao: `make dump FILE=x.mmd` -----------------------------------------------------
+
+/// Desenha o arquivo de `DECKLE_DUMP` e imprime o resultado, para olhar a arte. Largura em
+/// `DECKLE_DUMP_WIDTH` (padrao 100); `DECKLE_DUMP_ASCII=1` troca o charset.
+#[test]
+#[ignore = "ferramenta de depuracao: rode `make dump FILE=caminho.mmd`"]
+fn dump_file() {
+    let path = std::env::var("DECKLE_DUMP").expect("defina DECKLE_DUMP=caminho.mmd");
+    let src = std::fs::read_to_string(&path).expect("ler o arquivo");
+    let width = std::env::var("DECKLE_DUMP_WIDTH")
+        .ok()
+        .and_then(|w| w.parse().ok())
+        .unwrap_or(100);
+    let charset = if std::env::var("DECKLE_DUMP_ASCII").is_ok_and(|v| v == "1") {
+        Charset::Ascii
+    } else {
+        Charset::Unicode
+    };
+    let started = Instant::now();
+    let opts = RenderOptions {
+        width,
+        charset,
+        ..RenderOptions::default()
+    };
+    match render_ex(&src, &opts) {
+        Ok(rendered) => {
+            println!("{}", rendered.lines.join("\n"));
+            println!(
+                "-- ok: {} linhas, {} colunas, simplified={:?}, {:?}",
+                rendered.lines.len(),
+                widest(&rendered.lines),
+                rendered.simplified,
+                started.elapsed()
+            );
+        }
+        Err(err) => println!("-- ERR: {err}"),
+    }
 }
 
 // --- benchmark (V5): `make bench` ----------------------------------------------------------

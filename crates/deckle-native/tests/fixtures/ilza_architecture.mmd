@@ -1,0 +1,122 @@
+flowchart TB
+    subgraph Cliente["🖥️ Cliente"]
+        FE["Frontend\n(React / Next.js)"]
+    end
+
+    subgraph API["⚡ FastAPI — API REST :8000"]
+        direction TB
+        HEALTH["/health"]
+        CORS["CORS Middleware"]
+        RATELIMIT["Rate Limit Middleware"]
+        DB_MW["DB Session Middleware"]
+
+        subgraph Modules["Módulos da Aplicação"]
+            direction LR
+            subgraph AuthMod["🔐 Auth Module"]
+                AUTH_CTRL["Auth Controller"]
+                AUTH_UC["Use Cases\nLogin · Register\nRefresh · Logout\nGet Me"]
+                AUTH_DOMAIN["Domain\nUser · Role\nToken Payload\nRefresh Token"]
+                AUTH_INFRA["Infrastructure\nBCrypt Hasher\nJWT Token Service\nUser Repository\nRefresh Token Repo"]
+            end
+
+            subgraph PatientsMod["👤 Patients Module"]
+                PAT_CTRL["Patients Controller"]
+                PAT_UC["Use Cases\nGet · List · Update\nFind by CPF\nFind or Create"]
+                PAT_DOMAIN["Domain\nPatient Entity\nCPF · Sex VOs"]
+                PAT_INFRA["Infrastructure\nPatient Repository\nPessoa Model"]
+            end
+        end
+    end
+
+    subgraph AI["🧠 Domínio IA (ai/)"]
+        direction TB
+
+        ENGINE["TriageEngine\n(ITriageEngine)"]
+
+        subgraph Agents["Agentes"]
+            direction LR
+            TRIAGE_AG["TriageAgent\n(Protocolo Manchester)"]
+            SPEC_AG["SpecialistAgent\n(Anamnese Aprofundada)"]
+        end
+
+        subgraph AISupport["Suporte IA"]
+            direction LR
+            PROMPTS["Prompts\nTriage Instructions\nSpecialist Instructions"]
+            GUARDRAIL["OpenAI Guardrail\n+ Rules"]
+            SESSION["FileSessionManager\n(ISessionManager)"]
+            TOOL["Report Tool\n(IReportTool)"]
+        end
+
+        DI["DI Factory\ncreate_triage_engine()"]
+    end
+
+    subgraph Temporal["⏱️ Temporal.io"]
+        direction LR
+        TEMPORAL_SRV["Temporal Server\n:7233"]
+        TEMPORAL_UI["Temporal UI\n:8233"]
+        WORKER["Temporal Worker\nTriageWorkflow"]
+    end
+
+    subgraph Infra["🏗️ Infraestrutura"]
+        direction LR
+        PG[("PostgreSQL 16\nApp DB\n:5432")]
+        PG_TEMP[("PostgreSQL 16\nTemporal DB\n:5433")]
+        REDIS[("Redis 7\n:6379")]
+    end
+
+    subgraph External["☁️ Serviços Externos"]
+        direction LR
+        OPENAI["OpenAI API\nGPT-5\nGPT-4.1-mini"]
+        S3["AWS S3\nRelatórios PDF"]
+    end
+
+    %% ── Fluxo Principal ──
+    FE -->|"HTTP/REST"| API
+    AUTH_CTRL --> AUTH_UC --> AUTH_DOMAIN
+    AUTH_UC --> AUTH_INFRA
+    PAT_CTRL --> PAT_UC --> PAT_DOMAIN
+    PAT_UC --> PAT_INFRA
+
+    %% ── API → IA ──
+    API -->|"Triagem Request"| ENGINE
+    ENGINE --> TRIAGE_AG
+    TRIAGE_AG -->|"Handoff"| SPEC_AG
+    TRIAGE_AG --> PROMPTS
+    SPEC_AG --> PROMPTS
+    SPEC_AG --> TOOL
+    ENGINE --> GUARDRAIL
+    ENGINE --> SESSION
+    DI -->|"Compõe"| ENGINE
+
+    %% ── Temporal ──
+    API -->|"Start Workflow"| TEMPORAL_SRV
+    TEMPORAL_SRV --> WORKER
+    WORKER -->|"Executa"| ENGINE
+    TEMPORAL_SRV --> PG_TEMP
+    TEMPORAL_UI --> TEMPORAL_SRV
+
+    %% ── Infra ──
+    AUTH_INFRA --> PG
+    PAT_INFRA --> PG
+    AUTH_INFRA -->|"Rate Limit"| REDIS
+
+    %% ── Externos ──
+    TRIAGE_AG -->|"LLM Call"| OPENAI
+    SPEC_AG -->|"LLM Call"| OPENAI
+    GUARDRAIL -->|"Validação"| OPENAI
+    TOOL -->|"Upload PDF"| S3
+
+    %% ── Estilos ──
+    classDef clientStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef apiStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c
+    classDef aiStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c
+    classDef temporalStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef infraStyle fill:#fce4ec,stroke:#c62828,stroke-width:2px,color:#b71c1c
+    classDef extStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px,color:#e65100
+
+    class FE clientStyle
+    class HEALTH,CORS,RATELIMIT,DB_MW,AUTH_CTRL,AUTH_UC,AUTH_DOMAIN,AUTH_INFRA,PAT_CTRL,PAT_UC,PAT_DOMAIN,PAT_INFRA apiStyle
+    class ENGINE,TRIAGE_AG,SPEC_AG,PROMPTS,GUARDRAIL,SESSION,TOOL,DI aiStyle
+    class TEMPORAL_SRV,TEMPORAL_UI,WORKER temporalStyle
+    class PG,PG_TEMP,REDIS infraStyle
+    class OPENAI,S3 extStyle

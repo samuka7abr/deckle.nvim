@@ -2,8 +2,8 @@
 //! `&str`, sai `Vec<String>`, e e por isso que `cargo test` cobre o crate sem editor nenhum.
 //!
 //! Regra do projeto: sempre `Err`, nunca `panic!` deliberado. O `catch_unwind` em
-//! [`render`] existe so por defesa contra panic dentro do merman, que e alpha, e converte o
-//! panic em `Err` com mensagem.
+//! [`render_ex`] existe so por defesa contra panic dentro do merman (ou do achatamento), e
+//! converte o panic em `Err` com mensagem.
 
 use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -117,10 +117,95 @@ pub fn supported_types() -> Vec<String> {
         .collect()
 }
 
+/// O que o desenho deixou de fielmente mostrar para caber no renderer de texto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Simplified {
+    /// Flowchart: o merman nao roteou as arestas que cruzam a borda de um `subgraph`, entao o
+    /// desenho saiu sem as caixas dos subgraphs (V11).
+    Subgraphs,
+    /// State: o mesmo, para estados compostos aninhados.
+    CompositeStates,
+}
+
+impl Simplified {
+    /// O que foi achatado, em ingles, na forma que a nota do preview usa: `layout simplified
+    /// (<label> flattened)`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Subgraphs => "subgraphs",
+            Self::CompositeStates => "composite states",
+        }
+    }
+}
+
+/// Resultado de [`render_ex`]: as linhas e o que, se algo, foi simplificado para chegar nelas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rendered {
+    pub lines: Vec<String>,
+    /// `Some` quando o desenho veio do fallback de achatamento. `None` e o desenho fiel.
+    pub simplified: Option<Simplified>,
+    /// A mensagem do merman que motivou a simplificacao, para depuracao. `Some` so quando
+    /// `simplified` e `Some`.
+    pub cause: Option<String>,
+}
+
+/// Trechos da mensagem do merman que dizem "nao consegui rotear as arestas deste grafo". Sao
+/// os unicos erros que o achatamento de subgraphs conserta: qualquer outro (sintaxe, forma
+/// nao suportada, tamanho) falharia igual no diagrama achatado.
+const ROUTING_FAILURES: &[&str] = &[
+    "routes crossing reserved graph geometry",
+    "unroutable graph edges",
+];
+
+pub(crate) fn is_routing_failure(err: &RenderError) -> bool {
+    match err {
+        RenderError::Unsupported(msg) | RenderError::Render(msg) => {
+            ROUTING_FAILURES.iter().any(|marker| msg.contains(marker))
+        }
+        _ => false,
+    }
+}
+
 /// Renderiza `src` em linhas de texto. Nunca entra em panic: qualquer panic interno vira
-/// [`RenderError::Internal`].
+/// [`RenderError::Internal`]. Faz o mesmo que [`render_ex`], sem dizer se houve simplificacao.
 pub fn render(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError> {
-    guarded(|| render_inner(src, opts))
+    render_ex(src, opts).map(|rendered| rendered.lines)
+}
+
+/// Como [`render`], e informa se o desenho e fiel ou saiu do fallback de achatamento.
+///
+/// O fallback roda **uma vez**, e so quando o render falha com erro de roteamento
+/// (`ROUTING_FAILURES`) num flowchart ou state que tem subgraph ou estado composto: o texto e
+/// achatado (`flatten.rs`) e renderizado de novo. Se o achatado tambem falha, o erro devolvido
+/// e o do diagrama original, que e o que o usuario escreveu.
+pub fn render_ex(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError> {
+    guarded(|| render_ex_inner(src, opts))
+}
+
+fn render_ex_inner(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError> {
+    validate(src, opts)?;
+
+    match draw(src, opts) {
+        Ok(lines) => Ok(Rendered {
+            lines,
+            simplified: None,
+            cause: None,
+        }),
+        Err(err) if is_routing_failure(&err) => {
+            let Some((flat, simplified)) = crate::flatten::flatten(src) else {
+                return Err(err);
+            };
+            match draw(&flat, opts) {
+                Ok(lines) => Ok(Rendered {
+                    lines,
+                    simplified: Some(simplified),
+                    cause: Some(err.to_string()),
+                }),
+                Err(_) => Err(err),
+            }
+        }
+        Err(err) => Err(err),
+    }
 }
 
 /// Roda `f` e converte panic em `Err`. Separado de [`render`] para o teste poder injetar um
@@ -142,9 +227,20 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
-fn render_inner(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError> {
-    validate(src, opts)?;
+/// O render de `src` como esta, sem achatar. So para teste provar que o merman falha num caso.
+#[cfg(test)]
+pub(crate) fn render_unflattened(
+    src: &str,
+    opts: &RenderOptions,
+) -> Result<Vec<String>, RenderError> {
+    guarded(|| {
+        validate(src, opts)?;
+        draw(src, opts)
+    })
+}
 
+/// Parse e layout de `src`, sem a guarda de entrada e sem fallback.
+fn draw(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError> {
     let parse_opts = ParseOptions::strict();
     let parsed = ENGINE
         .with(|engine| match opts.diagram_ty.as_deref() {

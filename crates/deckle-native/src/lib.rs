@@ -6,6 +6,7 @@
 //! Contrato completo em `docs/architecture.md`, secao 5.
 
 mod binding;
+mod flatten;
 mod render;
 
 #[cfg(test)]
