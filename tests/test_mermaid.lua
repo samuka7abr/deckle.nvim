@@ -218,9 +218,10 @@ T["diagrama"]["recebe a largura, o charset e max_src_lines que o render usa"] = 
   r(FENCE, { width = 33, charset = "ascii" })
   eq(calls[1].opts, { width = 33, charset = "ascii", max_src_lines = 200 })
 
+  -- Em Unicode, com `mermaid.colors` no padrão (ligado), o crate recebe `color = true`.
   cfg().setup({ mermaid = { max_src_lines = 7 } })
   r(FENCE)
-  eq(calls[2].opts, { width = 40, charset = "unicode", max_src_lines = 7 })
+  eq(calls[2].opts, { width = 40, charset = "unicode", max_src_lines = 7, color = true })
 end
 
 T["diagrama"]["dentro de quote e de lista o crate recebe a largura que sobrou"] = function()
@@ -769,6 +770,232 @@ T["layout simplificado"]["aviso que não é texto (ou é vazio) é ignorado, o d
     end
     eq(r(FENCE, { width = 100 }).lines, { "┌─┐", "│ x │", "└─┘" })
   end
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Cor: o crate devolve TrueColor e o `render/ansi.lua` vira marcas
+-- ---------------------------------------------------------------------------------------
+
+T["cor"] = unit_set()
+
+local SGR_ART =
+  { "\27[38;2;21;101;192m┌─┐\27[0m", "│ a │", "\27[48;2;1;2;3m└─┘\27[0m" }
+local CLEAN_ART = { "┌─┐", "│ a │", "└─┘" }
+
+--- Um `deckle.render.ansi` falso: tira o escape e põe uma marca `FAKE` nas linhas que tinham um.
+---@return table spy `{ calls = integer, parse = function }`
+local function fake_ansi()
+  local ansi = { calls = 0 }
+  function ansi.parse(lines)
+    ansi.calls = ansi.calls + 1
+    local clean, marks = {}, {}
+    for i, line in ipairs(lines) do
+      clean[i] = line:gsub("\27%[[%d;]*m", "")
+      if clean[i] ~= line then
+        marks[#marks + 1] = { row = i - 1, col = 0, end_col = #clean[i], hl = "FAKE" }
+      end
+    end
+    return clean, marks
+  end
+  return ansi
+end
+
+--- Roda `fn` sem que `require("deckle.render.ansi")` ache nada, exista o arquivo ou não.
+---@param fn fun()
+local function without_ansi(fn)
+  local saved_loaded = package.loaded["deckle.render.ansi"]
+  local saved_preload = package.preload["deckle.render.ansi"]
+  package.loaded["deckle.render.ansi"] = nil
+  package.preload["deckle.render.ansi"] = function()
+    error("module 'deckle.render.ansi' not found (hidden by the test)", 0)
+  end
+  local ok, err = pcall(fn)
+  package.loaded["deckle.render.ansi"] = saved_loaded
+  package.preload["deckle.render.ansi"] = saved_preload
+  if not ok then
+    error(err, 0)
+  end
+end
+
+local function sgr_responder(notice)
+  fake.responder = function()
+    return vim.deepcopy(SGR_ART), notice
+  end
+end
+
+local function marks_with(result, hl)
+  local found = {}
+  for _, mark in ipairs(result.marks) do
+    if mark.hl == hl then
+      found[#found + 1] = mark
+    end
+  end
+  return found
+end
+
+T["cor"]["o crate recebe color = true só em Unicode e com mermaid.colors ligado"] = function()
+  r(FENCE)
+  eq(calls[1].opts.color, true)
+
+  mermaid.cache_clear()
+  r(FENCE, { charset = "ascii" })
+  eq(calls[2].opts.color, nil)
+
+  mermaid.cache_clear()
+  cfg().setup({ mermaid = { colors = false } })
+  r(FENCE)
+  eq(calls[3].opts.color, nil)
+  eq(calls[3].opts, { width = 40, charset = "unicode", max_src_lines = 200 })
+end
+
+T["cor"]["as linhas saem sem escape, e o ansi.lua dá as marcas por cima do DeckleMermaid"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    sgr_responder()
+    local result = r(FENCE)
+    eq(result.lines, CLEAN_ART)
+    eq(table.concat(result.lines, "\n"):find("\27", 1, true), nil)
+
+    -- O DeckleMermaid continua em toda linha com texto...
+    eq(#marks_with(result, "DeckleMermaid"), 3)
+    -- ...e as marcas de cor do ansi.lua vêm junto, com prioridade maior que a dele.
+    local colored = marks_with(result, "FAKE")
+    eq(#colored, 2)
+    eq(colored[1], { row = 0, col = 0, end_col = #CLEAN_ART[1], hl = "FAKE", priority = 4100 })
+    eq(colored[2].row, 2)
+  end)
+end
+
+T["cor"]["a prioridade que o ansi.lua já põe numa marca é respeitada"] = function()
+  with_module("deckle.render.ansi", {
+    parse = function()
+      return CLEAN_ART, { { row = 0, col = 0, end_col = 3, hl = "X", priority = 9000 } }
+    end,
+  }, function()
+    sgr_responder()
+    eq(marks_with(r(FENCE), "X")[1].priority, 9000)
+  end)
+end
+
+T["cor"]["sem o ansi.lua os escapes saem por um gsub e nenhum chega ao buffer"] = function()
+  without_ansi(function()
+    sgr_responder()
+    local result = r(FENCE)
+    eq(result.lines, CLEAN_ART)
+    eq(#marks_with(result, "DeckleMermaid"), 3)
+    -- Só o DeckleMermaid e nenhuma cor: o desenho continua inteiro.
+    eq(#result.marks, 3)
+  end)
+end
+
+T["cor"]["ansi.lua que falha ou devolve lixo cai no gsub, sem derrubar o bloco"] = function()
+  with_module("deckle.render.ansi", {
+    parse = function()
+      error("boom")
+    end,
+  }, function()
+    sgr_responder()
+    local result = r(FENCE)
+    eq(result.lines, CLEAN_ART)
+    eq(count_in(result.lines, "mermaid: "), 0)
+  end)
+
+  mermaid.cache_clear()
+  with_module("deckle.render.ansi", {
+    parse = function()
+      return nil
+    end,
+  }, function()
+    sgr_responder()
+    eq(r(FENCE).lines, CLEAN_ART)
+  end)
+
+  mermaid.cache_clear()
+  with_module("deckle.render.ansi", { parse = "não é função" }, function()
+    sgr_responder()
+    eq(r(FENCE).lines, CLEAN_ART)
+  end)
+end
+
+T["cor"]["diagrama sem escape nem chama o ansi.lua"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    local result = r(FENCE)
+    eq(result.lines, ART)
+    eq(ansi.calls, 0)
+    eq(#result.marks, 3)
+  end)
+end
+
+T["cor"]["o parse vai para o cache: a segunda vez não chama o crate nem o ansi.lua"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    sgr_responder()
+    local first = r(FENCE)
+    local second = r(FENCE)
+    eq(#calls, 1)
+    eq(ansi.calls, 1)
+    eq(second.lines, first.lines)
+    eq(second.marks, first.marks)
+    eq(mermaid.cache_stats().hits, 1)
+  end)
+end
+
+T["cor"]["quem recebe as marcas pode alterá-las sem sujar o cache"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    sgr_responder()
+    local ctx = { width = 40, charset = "unicode", indent = 0, depth = 0 }
+    local block = { kind = "code", lang = "mermaid", lines = { "a" } }
+    local _, first = mermaid.render(block, ctx)
+    marks_with({ marks = first }, "FAKE")[1].hl = "SUJO"
+    local _, second = mermaid.render(block, ctx)
+    eq(#marks_with({ marks = second }, "FAKE"), 2)
+    eq(#marks_with({ marks = second }, "SUJO"), 0)
+  end)
+end
+
+T["cor"]["a flag de cor entra na chave do cache"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    sgr_responder()
+    r(FENCE)
+    eq(mermaid.cache_stats().misses, 1)
+
+    -- Desligar a cor é outro desenho: não serve o colorido do cache.
+    cfg().setup({ mermaid = { colors = false } })
+    r(FENCE)
+    eq(mermaid.cache_stats(), { hits = 0, misses = 2, size = 2, limit = 64 })
+    eq(#calls, 2)
+    eq(calls[2].opts.color, nil)
+
+    -- E religar volta ao primeiro: hit.
+    cfg().setup({ mermaid = { colors = true } })
+    r(FENCE)
+    eq(mermaid.cache_stats().hits, 1)
+    eq(#calls, 2)
+  end)
+end
+
+T["cor"]["charset ascii com colors ligado: saída de sempre, sem cor e sem passar pelo ansi.lua"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    local result = r(FENCE, { charset = "ascii" })
+    eq(result.lines, ART)
+    eq(ansi.calls, 0)
+    eq(calls[1].opts, { width = 40, charset = "ascii", max_src_lines = 200 })
+  end)
+end
+
+T["cor"]["o aviso de layout simplificado e as cores convivem"] = function()
+  local ansi = fake_ansi()
+  with_module("deckle.render.ansi", ansi, function()
+    sgr_responder(SIMPLIFIED)
+    local result = r(FENCE, { width = 100 })
+    eq(result.lines, { CLEAN_ART[1], CLEAN_ART[2], CLEAN_ART[3], SIMPLIFIED })
+    eq(#marks_with(result, "FAKE"), 2)
+    eq(#marks_with(result, "DeckleCodeNote"), 1)
+  end)
 end
 
 -- ---------------------------------------------------------------------------------------

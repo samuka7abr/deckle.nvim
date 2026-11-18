@@ -310,6 +310,97 @@ T["gate 5: o mesmo diagrama em Unicode tem byte fora do ASCII (o caso acima não
 )
 
 -- ---------------------------------------------------------------------------------------
+-- Cor (TrueColor): `mermaid.colors`
+-- ---------------------------------------------------------------------------------------
+
+local STYLED = {
+  "```mermaid",
+  "flowchart LR",
+  "  A[Start] --> B[End]",
+  "  classDef good fill:#e3f2fd,stroke:#1565c0,color:#0d47a1",
+  "  class A,B good",
+  "```",
+}
+
+--- Se o `deckle.render.ansi` (o parser de SGR) existe nesta árvore. Sem ele os escapes saem por um
+--- `gsub` e não há marcas de cor; com ele há, e o teste confere as duas situações.
+local has_ansi = vim.uv.fs_stat(repo_root .. "/lua/deckle/render/ansi.lua") ~= nil
+
+---@return string[] os grupos de highlight das marcas do preview que não são o `DeckleMermaid` base
+local function color_groups()
+  local found = {}
+  for _, group in ipairs(preview_groups()) do
+    if group:find("^DeckleMermaid") and group ~= "DeckleMermaid" then
+      found[#found + 1] = group
+    end
+  end
+  return found
+end
+
+T["cor: classDef não deixa escape no buffer, e o texto é o do modo puro"] = native_case(function()
+  open_preview(doc({ "# Título" }, STYLED, { "depois" }))
+  local colored = preview_lines()
+  for _, line in ipairs(colored) do
+    eq(line:find("\27", 1, true), nil)
+  end
+  eq(has(colored, "Start"), true)
+  eq(has(colored, "mermaid:"), false)
+  if has_ansi then
+    eq(#color_groups() > 0, true)
+  else
+    eq(#color_groups(), 0)
+  end
+  eq(vim.tbl_contains(preview_groups(), "DeckleMermaid"), true)
+
+  -- Com a cor desligada o desenho é o mesmo, célula por célula (modo puro, como era antes).
+  child.cmd("Deckle close")
+  child.lua([[require("deckle").setup({ mermaid = { colors = false } })]])
+  child.cmd("Deckle open")
+  eq(preview_lines(), colored)
+  eq(#color_groups(), 0)
+  eq(vim.tbl_contains(preview_groups(), "DeckleMermaid"), true)
+end)
+
+T["cor: diagrama sem estilo não tem marca de cor nenhuma (o tema do merman não vaza)"] = native_case(
+  function()
+    open_preview(doc(FLOW, SEQUENCE))
+    eq(#color_groups(), 0)
+    eq(vim.tbl_contains(preview_groups(), "DeckleMermaid"), true)
+    for _, line in ipairs(preview_lines()) do
+      eq(line:find("\27", 1, true), nil)
+    end
+  end
+)
+
+T["cor: charset ascii nunca tem cor nem byte fora do ASCII"] = native_case(function()
+  child.lua([[require("deckle").setup({ charset = "ascii" })]])
+  open_preview(doc(STYLED))
+  local lines = preview_lines()
+  eq(table.concat(lines, "\n"):find("[\128-\255]"), nil)
+  eq(table.concat(lines, "\n"):find("\27", 1, true), nil)
+  eq(#color_groups(), 0)
+end)
+
+T["cor: o cache separa o desenho colorido do puro e acerta na segunda abertura"] = native_case(
+  function()
+    open_preview(doc(STYLED))
+    eq(child.lua_get("_G.stats().misses"), 1)
+    child.cmd("Deckle close")
+    child.cmd("Deckle open")
+    eq(child.lua_get("_G.stats().hits"), 1)
+
+    child.cmd("Deckle close")
+    child.lua([[require("deckle").setup({ mermaid = { colors = false } })]])
+    child.cmd("Deckle open")
+    -- Cor desligada é outra chave: o desenho puro vai ao crate, e não serve o colorido.
+    eq(child.lua_get("_G.stats().misses"), 2)
+    child.cmd("Deckle close")
+    child.cmd("Deckle open")
+    eq(child.lua_get("_G.stats().hits"), 2)
+  end
+)
+
+-- ---------------------------------------------------------------------------------------
 -- Largura
 -- ---------------------------------------------------------------------------------------
 

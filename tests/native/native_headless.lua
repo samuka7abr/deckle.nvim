@@ -87,6 +87,34 @@ expect_error("size guard", function()
   native.render(table.concat(src, "\n"), { width = 80 })
 end, "too large")
 
+-- `color`: TrueColor so com o que o diagrama pediu, e a saida de sempre quando desligado.
+local ESTILIZADO = table.concat({
+  "flowchart LR",
+  "  A --> B",
+  "  classDef c fill:#e3f2fd,stroke:#1565c0",
+  "  class A c",
+}, "\n")
+local colorido = table.concat(native.render(ESTILIZADO, { width = 80, color = true }), "\n")
+check(
+  "color = true emits the authored colors",
+  colorido:find("\27[38;2;21;101;192m", 1, true) ~= nil,
+  colorido
+)
+check("color = true never emits the merman theme", not colorido:find("38;2;39;39;42", 1, true))
+local sem_estilo = table.concat(native.render("flowchart LR\n  A --> B", { color = true }), "\n")
+check("color = true without styling has no escape", not sem_estilo:find("\27", 1, true), sem_estilo)
+check(
+  "color = false equals the default",
+  vim.deep_equal(native.render(ESTILIZADO, { color = false }), native.render(ESTILIZADO))
+)
+check(
+  "no escape without color",
+  not table.concat(native.render(ESTILIZADO), "\n"):find("\27", 1, true)
+)
+expect_error("color of the wrong type", function()
+  native.render("flowchart TD\n  A --> B", { color = "yes" })
+end, "opts.color")
+
 expect_error("custom max_src_lines", function()
   native.render("flowchart TD\n  A --> B\n  B --> C", { max_src_lines = 2 })
 end, "too large")
