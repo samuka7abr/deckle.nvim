@@ -604,6 +604,110 @@ fn nested_composite_state_renders_flattened() {
     assert!(rendered.lines.join("\n").contains('X'));
 }
 
+// --- entidades HTML nos rotulos (V11) ------------------------------------------------------
+
+/// Toda linha com o mesmo numero de colunas (so ha ASCII e desenho de caixa nestes casos, todos de
+/// uma celula): o merman completa as linhas ate a largura do desenho, e a decodificacao nao
+/// pode deixar nenhuma mais curta.
+fn assert_rectangular(name: &str, lines: &[String]) {
+    let widest = widest(lines);
+    for (row, line) in lines.iter().enumerate() {
+        assert_eq!(
+            line.chars().count(),
+            widest,
+            "{name}: a linha {row} perdeu largura:\n{}",
+            lines.join("\n")
+        );
+    }
+}
+
+#[test]
+fn flowchart_entities_are_decoded_and_the_boxes_stay_aligned() {
+    let src = "flowchart LR\n  A[\"a &lt; b\"] --> B[\"3 &lt;&lt; 4\"]\n  B -->|\"x &lt; y\"| C[\"p &amp; q &gt; r\"]\n  C --> D[\"cmp #lt; e\"]";
+    for charset in [Charset::Unicode, Charset::Ascii] {
+        let lines = render(src, &RenderOptions { charset, ..opts() }).unwrap();
+        let text = lines.join("\n");
+        for needle in ["a < b", "3 << 4", "x < y", "p & q > r", "cmp < e"] {
+            assert!(
+                text.contains(needle),
+                "{charset:?}: faltou {needle:?}:\n{text}"
+            );
+        }
+        for entity in ["&lt;", "&gt;", "&amp;"] {
+            assert!(
+                !text.contains(entity),
+                "{charset:?}: sobrou {entity}:\n{text}"
+            );
+        }
+        assert_rectangular(&format!("flowchart {charset:?}"), &lines);
+    }
+}
+
+#[test]
+fn state_entities_are_decoded_too() {
+    let src = "stateDiagram-v2\n  state \"Idle &lt;wait&gt;\" as Idle\n  [*] --> Idle\n  Idle --> Busy\n  Busy --> [*]";
+    let lines = render(src, &opts()).unwrap();
+    let text = lines.join("\n");
+    assert!(text.contains("Idle <wait>"), "{text}");
+    assert!(!text.contains("&lt;") && !text.contains("&gt;"), "{text}");
+    assert_rectangular("state", &lines);
+}
+
+#[test]
+fn entities_in_cjk_and_emoji_labels_do_not_misalign_the_right_border() {
+    let src = "flowchart LR\n  A[\"你好 &lt; 世界\"] --> B[\"🚀 &amp; ありがとう\"]";
+    let lines = render(src, &opts()).unwrap();
+    let text = lines.join("\n");
+    assert!(text.contains("你好 < 世界"), "{text}");
+    assert!(text.contains("🚀 & ありがとう"), "{text}");
+    // Largura em celulas: o `│` da direita de cada caixa fica na mesma coluna em todas as
+    // linhas com texto (a coluna e a do `┐` da borda de cima).
+    let cells = |s: &str| -> usize {
+        s.chars()
+            .map(|c| match c as u32 {
+                0x1100..=0x115f | 0x2e80..=0xa4cf | 0xac00..=0xd7a3 | 0xff00..=0xff60 => 2,
+                0x1f300..=0x1faff => 2,
+                _ => 1,
+            })
+            .sum()
+    };
+    let top = lines.iter().find(|l| l.starts_with('┌')).unwrap();
+    for line in lines
+        .iter()
+        .filter(|l| l.contains("你好") || l.contains("🚀"))
+    {
+        assert_eq!(cells(line), cells(top), "{line:?} vs {top:?}");
+        // O fim visivel da linha (a ultima borda) cai na mesma coluna do `┐` de cima.
+        assert_eq!(
+            cells(line.trim_end()),
+            cells(top.trim_end()),
+            "{line:?} vs {top:?}"
+        );
+    }
+}
+
+#[test]
+fn double_encoded_ampersand_is_a_known_limitation() {
+    // O merman ja decodifica `&amp;lt;` uma vez, e entrega `&lt;`, que a limpeza nao distingue
+    // de um `&lt;` que ele deixou literal: o texto sai `x < y`, nao `x &lt; y` (V11).
+    let lines = render("flowchart LR\n  A[\"x &amp;lt; y\"]", &opts()).unwrap();
+    assert!(lines.join("\n").contains("x < y"), "{}", lines.join("\n"));
+}
+
+#[test]
+fn numeric_apostrophe_entity_is_a_known_limitation() {
+    // O merman consome o `#39;` de `&#39;` como codigo de entidade do Mermaid e deixa o `&`.
+    // Nao ha o que decodificar na saida; o teste fixa o comportamento para a V11 (use `#39;`).
+    let text = render("flowchart LR\n  A[\"it&#39;s\"]", &opts())
+        .unwrap()
+        .join("\n");
+    assert!(text.contains("it&'s"), "{text}");
+    let ok = render("flowchart LR\n  A[\"it#39;s\"]", &opts())
+        .unwrap()
+        .join("\n");
+    assert!(ok.contains("it's"), "{ok}");
+}
+
 // --- depuracao: `make dump FILE=x.mmd` -----------------------------------------------------
 
 /// Desenha o arquivo de `DECKLE_DUMP` e imprime o resultado, para olhar a arte. Largura em

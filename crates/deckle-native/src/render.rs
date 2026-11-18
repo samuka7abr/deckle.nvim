@@ -263,7 +263,9 @@ fn draw(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError> {
         }
     }
 
-    let lines: Vec<String> = output.text.lines().map(str::to_owned).collect();
+    // O merman deixa `&lt;`, `&gt;` e `&amp;` literais em flowchart e state (V11): decodifica
+    // nas linhas ja desenhadas, sem mexer na largura (`clean.rs`).
+    let lines = crate::clean::decode_entities(output.text.lines().map(str::to_owned).collect());
     // Diagrama so com cabecalho e valido para o parser mas nao desenha nada. Devolver zero
     // linhas faria o bloco sumir do preview sem explicacao, entao vira erro e o chamador
     // degrada para codigo cru.
