@@ -6,8 +6,9 @@ Abra com `:Deckle open`. É também um teste: o `cargo test` renderiza cada bloc
 job `native` abre este arquivo no preview e exige que nenhum bloco degrade, com a única
 exceção do `pie` da última seção. Voltar ao [showcase geral](showcase.md).
 
-Estilo e cor (`classDef`, `style`, `linkStyle`, `rect rgb(...)`, `box`) não viram cor na arte
-de texto, mas não podem quebrar nem degradar o desenho. Eles estão aqui de propósito.
+Estilo e cor (`classDef`, `style`, `linkStyle`, `rect rgb(...)`, `box`) viram cor no preview
+em flowchart, state e sequence quando `mermaid.colors = true` (o padrão). Em class o merman
+não emite cor. Em nenhum caso o estilo pode quebrar ou degradar o desenho.
 
 ## Índice
 
