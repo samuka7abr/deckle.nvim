@@ -829,7 +829,20 @@ I["gate 2: o fonte não ganha nada com a degradação (ADR-0003)"] = function()
   open_preview(DOC)
   local src_lines = child.lua_get("vim.api.nvim_buf_get_lines(_G.src, 0, -1, false)")
   eq(src_lines, DOC)
-  eq(child.lua_get([[#vim.api.nvim_buf_get_extmarks(_G.src, -1, 0, -1, {})]]), 0)
+  -- Só os namespaces do deckle: o Neovim põe os dele no fonte (o nightly liga o treesitter no
+  -- filetype markdown), e isso não é da conta do plugin.
+  eq(
+    child.lua_get([[(function()
+      local n = 0
+      for name, id in pairs(vim.api.nvim_get_namespaces()) do
+        if name:find("^deckle") then
+          n = n + #vim.api.nvim_buf_get_extmarks(_G.src, id, 0, -1, {})
+        end
+      end
+      return n
+    end)()]]),
+    0
+  )
   eq(child.lua_get("vim.bo[_G.src].modifiable"), true)
 end
 
