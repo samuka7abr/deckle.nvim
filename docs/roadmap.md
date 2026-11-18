@@ -253,6 +253,61 @@ O mapa é parcial de propósito. A busca resolve para o bloco que contém a linh
 **Risco:** o loop reentrante e a invalidação do mapa após re-render. Os dois têm teste no
 gate porque nenhum dos dois aparece em teste manual rápido.
 
+**Entregue.** A API (`locate`, `src_to_preview`, `preview_to_src`, `attach`, `detach`,
+`is_attached`) e as regras de resolução de linha estão no topo de `lua/deckle/sync.lua`, que é a
+referência. O que difere do esboço acima ou vai além:
+
+- **Um array, não dois.** O mapa da fase 2 já é ordenado nos dois lados, então a busca binária
+  corre sobre as próprias entradas, olhando `src_start` ou `preview_start`. Não há cópia nem
+  índice à parte para invalidar.
+- **Resolução de linha** (a busca "para o bloco que contém a linha" ficou mais precisa):
+  dentro de um bloco, interpolação linear pelo deslocamento (N linhas do fonte para 1 do
+  preview cai sempre nessa uma; 1 para N cai na primeira; tamanhos iguais, identidade); entre
+  dois blocos, o bloco mais próximo medido até a **borda**, e **empate vale o bloco de cima**
+  (uma linha em branco entre blocos é sempre empate); antes do primeiro, a primeira linha do
+  primeiro; depois do último, a última linha do último; mapa vazio, `nil`. Fora de um bloco o
+  destino é a borda do bloco do outro lado, sem interpolar.
+- **Quem liga a sincronia.** `preview.lua` chama `sync.attach(src)` e `sync.detach(src)` junto
+  dos próprios autocmds vivos (duas linhas), em vez de a fase 3 só escutar `User`. Com `sync =
+  "off"` não pode existir autocmd nenhum, nem um ouvinte global que faça o bootstrap de
+  `DeckleOpen`, e o `attach` não faz nada nesse caso. Por preview aberto, o augroup
+  `deckle_sync_<src>` tem três autocmds: `CursorMoved` no fonte, `CursorMoved` no preview e
+  `User DeckleRender`. O mapa é relido nesse evento, lendo `preview.state(src).map`.
+- **Dois mecanismos contra o loop, porque as causas são duas.** Uma flag reentrante (`busy`)
+  pega o evento síncrono (um autocmd de terceiro que redispara `CursorMoved` ao ver o cursor
+  mexer). E uma linha esperada por lado (`expect`) pega o evento tardio: o `CursorMoved` só
+  dispara na janela em que o usuário **entra**, com o cursor onde o módulo o pôs. Sem ele,
+  alternar entre janelas empurraria o cursor do fonte para a linha interpolada, e num parágrafo
+  de 6 linhas que vira 1 o cursor saltaria só por trocar de janela. Cada mecanismo tem um teste
+  que falha sem ele (ambiente hostil que redispara o evento para a flag; troca de janela por
+  tecla para o `expect`).
+- **O render realinha o preview.** No primeiro render depois do `attach`, e nos seguintes
+  enquanto o foco está no fonte, o preview vai para o bloco do cursor do fonte pelo mapa novo.
+  É o que faz o preview abrir onde o fonte já estava, e o que corrige a deriva depois de uma
+  edição. Com o foco no preview, o render não mexe na posição de leitura (a fase 2 já a
+  preserva). O teste `a posição de leitura sobrevive ao render` passou a rodar com
+  `sync = "off"`, porque o que ele prova é a preservação do `write`, não a sincronia.
+- **Altura da janela (opcional, feito).** Além do cursor, o destino é rolado (`winrestview`)
+  para a linha de chegada ficar na mesma linha de tela do cursor de origem, limitado à última
+  página cheia do buffer para não deixar um vão. Com mapa identidade o `topline` dos dois
+  lados coincide (teste). Com `wrap` ligado no fonte é aproximação: a altura vem em linhas de
+  tela e o `topline` em linhas do buffer.
+- **Só `CursorMoved`.** Não `CursorMovedI` (o preview também não re-renderiza digitando) nem
+  `WinScrolled`: rolar um dos lados com a roda ou `<C-e>`, sem o cursor sair da tela, não
+  sincroniza. Fica para quem pedir.
+- **`sync` é lido no `attach`.** Mudar a opção com um preview aberto vale na abertura seguinte.
+- **Erro na sincronia** (a flag nunca fica presa; um aviso por mensagem, `notify_once`) tem
+  teste que força o erro.
+- **Gate 3, orçamento.** Média por movimento menor que 5 ms, medida dentro do Neovim com
+  `nvim_exec_autocmds("CursorMoved")`, sem a ida e volta do RPC. Medido numa máquina comum, um
+  documento de 5000 linhas (2000 blocos) abre em ~76 ms e cada movimento custa de 5 a 8 µs,
+  conforme o sentido, contra ~4 µs do laço sem o deckle: o 5 ms é folga de CI, não o custo
+  real. Fora disso, a busca sozinha faz 20 mil consultas num mapa de 100 mil blocos dentro de
+  um orçamento de 1 s.
+- **Não foi validado:** o redraw numa UI de terminal de verdade (os testes são headless, com
+  teclas reais enviadas por RPC); o comportamento com `wrap` ligado, folds e `scrolloff` alto
+  no fonte; e a rolagem pelo mouse.
+
 ---
 
 ## Fase 4 — Tabelas
