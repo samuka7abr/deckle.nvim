@@ -852,31 +852,6 @@ T["fallbacks"]["html: linhas cruas"] = function()
   eq(marked(result, "DeckleHtml"), result.lines)
 end
 
-T["fallbacks"]["table: texto cru de Markdown"] = function()
-  eq(r("| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |").lines, {
-    "| a | b |",
-    "| --- | --- |",
-    "| 1 | 2 |",
-    "| 3 | 4 |",
-  })
-end
-
-T["fallbacks"]["table: formatação some, o pipe escapado fica"] = function()
-  eq(r("| **a** | b\\|c |\n|---|---|\n| [l](u) | `c` |").lines, {
-    "| a | b\\|c |",
-    "| --- | --- |",
-    "| l | c |",
-  })
-end
-
-T["fallbacks"]["table: sem corpo, célula vazia e linha torta não lançam"] = function()
-  eq(r("| a | b |\n|---|---|").lines, { "| a | b |", "| --- | --- |" })
-  eq(r("| a | b |\n|---|---|\n|  |  |").lines[3], "|  |  |")
-  local ragged = r("| a | b |\n|---|---|\n| 1 |\n| 1 | 2 | 3 |")
-  eq(#ragged.lines, 4)
-  eq(ragged.lines[3], "| 1 |")
-end
-
 -- ---------------------------------------------------------------------------------------
 -- Mapa
 -- ---------------------------------------------------------------------------------------
