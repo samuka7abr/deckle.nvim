@@ -60,7 +60,8 @@ T["o relatório roda e é do deckle"] = function()
 end
 
 T["informa a camada atual"] = function()
-  eq(report():match("layer 0") ~= nil, true)
+  -- Camada 0 sem `.so`, camada 1 com `make native` na máquina de quem roda: os dois valem.
+  eq(report():match("layer [01] —") ~= nil, true)
 end
 
 T["diz o que falta para subir de camada"] = function()
@@ -144,7 +145,11 @@ T["binário nativo"]["de release: diz a origem, a versão, o alvo e o caminho"] 
   eq(text:match("v" .. vim.pesc(plugin_version())) ~= nil, true)
   eq(text:match("x86_64%-unknown%-linux%-gnu") ~= nil, true)
   eq(text:match("deckle_native%.so") ~= nil, true)
-  eq(text:match("WARNING") ~= nil, false)
+  -- O arquivo semeado são quatro bytes, não um módulo: a fase 7 tenta carregá-lo e o checkhealth
+  -- avisa que a camada 1 não subiu, com o caminho. É o aviso que um binário corrompido merece.
+  eq(text:match("WARNING") ~= nil, true)
+  eq(text:match("layer 1 %(native mermaid%) is unavailable") ~= nil, true)
+  eq(text:match("layer 0") ~= nil, true)
 end
 
 T["binário nativo"]["de build local: diz que foi compilado"] = function()
@@ -186,6 +191,61 @@ T["binário nativo"]["depois de uma instalação que falhou, mostra o motivo com
   -- A camada 0 segue valendo: é aviso, não erro.
   eq(text:match("ERROR") ~= nil, false)
   eq(text:match("layer 0") ~= nil, true)
+end
+
+T["binário nativo"]["binário que não carrega avisa que a camada 1 não subiu, com o motivo"] = function()
+  child.lua([[require("deckle").setup({ native = { path = "/nonexistent/deckle_native.so" } })]])
+  local text = report()
+  eq(text:match("layer 0 —") ~= nil, true)
+  eq(text:match("WARNING") ~= nil, true)
+  eq(text:match("layer 1 %(native mermaid%) is unavailable") ~= nil, true)
+  eq(text:match("native%.path /nonexistent/deckle_native%.so") ~= nil, true)
+  eq(text:match("native%.enabled = false") ~= nil, true)
+  -- A camada 0 funciona: é aviso, nunca erro.
+  eq(text:match("ERROR") ~= nil, false)
+end
+
+T["binário nativo"]["native.enabled = false: camada 0, dito como escolha e sem aviso"] = function()
+  child.lua([[require("deckle").setup({ native = { enabled = false } })]])
+  local text = report()
+  eq(text:match("layer 0 —") ~= nil, true)
+  eq(text:match("layer 1 %(native mermaid%) is off") ~= nil, true)
+  eq(text:match("disabled by `native%.enabled = false`") ~= nil, true)
+  eq(text:match("WARNING") ~= nil, false)
+  eq(text:match("ERROR") ~= nil, false)
+end
+
+T["binário nativo"]["módulo carregado: camada 1, versão, origem e os tipos suportados em runtime"] = function()
+  child.lua([[
+    package.loaded.deckle_native = {
+      render = function() return { "x" } end,
+      supported_types = function() return { "sequence", "flowchart", "gantt" } end,
+      version = function() return "1.2.3" end,
+    }
+  ]])
+  local text = report()
+  eq(text:match("layer 1 —") ~= nil, true)
+  eq(text:match("layer 0 —") ~= nil, false)
+  eq(text:match("deckle_native v1%.2%.3") ~= nil, true)
+  eq(text:match("runtimepath") ~= nil, true)
+  -- A lista vem do módulo, em ordem estável, e não de uma tabela escrita aqui.
+  eq(text:match("supported diagram types %(3%): flowchart, gantt, sequence") ~= nil, true)
+  eq(text:match("WARNING") ~= nil, false)
+  eq(text:match("ERROR") ~= nil, false)
+end
+
+T["binário nativo"]["módulo carregado cujo supported_types falha: avisa, e continua na camada 1"] = function()
+  child.lua([[
+    package.loaded.deckle_native = {
+      render = function() return { "x" } end,
+      supported_types = function() error("boom types") end,
+      version = function() return "1.2.3" end,
+    }
+  ]])
+  local text = report()
+  eq(text:match("layer 1 —") ~= nil, true)
+  eq(text:match("could not list the supported diagram types") ~= nil, true)
+  eq(text:match("boom types") ~= nil, true)
 end
 
 T["binário nativo"]["`native.path` configurado aparece no relatório"] = function()
