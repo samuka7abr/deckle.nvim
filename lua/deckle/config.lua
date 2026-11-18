@@ -18,7 +18,9 @@ local defaults = {
   sync = "cursor", -- "cursor" | "off"
   debounce_ms = 120,
   native = { enabled = true, path = nil },
-  mermaid = { max_src_lines = 200 },
+  -- `colors`: o merman desenha em TrueColor e o `classDef`, o `style`, o `linkStyle`, o `box rgb`
+  -- e o `rect rgb` do diagrama viram cor no preview. Com `charset = "ascii"` nunca há cor.
+  mermaid = { max_src_lines = 200, colors = true },
   -- Camada 2 (fase 9): `enabled` é "auto" (detecta o terminal), `true` (aceita o risco de SSH e
   -- tmux sem confirmação) ou `false`. `max_height` é o teto, em linhas, de uma imagem.
   images = { enabled = "auto", max_height = 20 },
@@ -29,7 +31,7 @@ local defaults = {
 local known_keys = {
   [""] = { "split", "width", "charset", "sync", "debounce_ms", "native", "mermaid", "images" },
   native = { "enabled", "path" },
-  mermaid = { "max_src_lines" },
+  mermaid = { "max_src_lines", "colors" },
   images = { "enabled", "max_height" },
 }
 
@@ -148,6 +150,7 @@ function M.validate(opts)
     false,
     "a positive integer"
   )
+  vim.validate("mermaid.colors", opts.mermaid.colors, "boolean")
 
   vim.validate("images", opts.images, "table")
   vim.validate("images.enabled", opts.images.enabled, function(value)
