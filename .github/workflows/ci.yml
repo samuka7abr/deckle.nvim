@@ -105,7 +105,8 @@ jobs:
           version: ${{ matrix.nvim-version }}
       # `make native` falha alto se o build falhar, e o script confere o exit code do nvim
       # (134 = abort, e a regressao de V2 que este job existe para pegar). Depois roda os
-      # testes do mermaid no preview que exigem o `.so` (tests/native/test_mermaid_native.lua,
-      # com DECKLE_REQUIRE_NATIVE=1: sem o `.so` eles falham aqui). No job `test`, sem Rust,
-      # esses mesmos casos sao pulados com aviso, e os de degradacao rodam de verdade.
+      # testes do mermaid no preview que exigem o `.so` (tests/native/test_mermaid_native.lua e
+      # test_docs_native.lua: o showcase e a captura do README, com DECKLE_REQUIRE_NATIVE=1:
+      # sem o `.so` eles falham aqui). No job `test`, sem Rust, esses mesmos casos sao pulados
+      # com aviso, e os de degradacao rodam de verdade.
       - run: ./scripts/test-native.sh

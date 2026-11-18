@@ -329,6 +329,10 @@ local function restart_child()
   child.o.columns = 120
   child.o.lines = 40
   child.lua([==[
+    -- `charset = "auto"` vira ASCII com TERM=linux/dumb, que é o que uma CI pode ter, e o caso
+    -- do empate procura o sublinhado Unicode do título. O ambiente de quem roda não entra.
+    vim.env.TERM = "xterm-256color"
+
     -- `vim.notify` coletado: o módulo avisa por notify em vez de lançar.
     _G.notes = {}
     vim.notify = function(msg, level)

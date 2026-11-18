@@ -16,7 +16,8 @@ Uma fase = um PR. Se um PR não passar no gate da própria fase, ele não entra.
 
 ## Decisões tomadas para destravar a fase 0
 
-Nenhuma delas está em ADR ainda. Estão aqui para serem contestadas antes de virarem código.
+Estão aqui para serem contestadas antes de virarem código. Só o piso de Neovim virou ADR
+([ADR-0005](adr/0005-piso-neovim-0-11.md), na fase 10); as demais seguem só aqui.
 
 | Decisão | Escolha | Por quê |
 |---|---|---|
@@ -734,6 +735,66 @@ está em LuaCATS no topo de cada um; os testes são `tests/test_caps.lua`, `test
 
 **Tag `v0.3.0` sai daqui.**
 
+**Entregue.** `doc/deckle.txt`, o README reescrito, `examples/showcase.md` (mais
+`examples/assets/folha.png`), o [ADR-0005](adr/0005-piso-neovim-0-11.md) e a suíte que prende
+tudo isso ao código: `tests/test_doc.lua`, `tests/test_showcase.lua`,
+`tests/native/test_docs_native.lua` e `tests/doc_helpers.lua`. A tag `v0.3.0` **não** foi criada
+neste PR. O que difere do esboço acima ou vai além:
+
+- **`doc/deckle.txt`** é vimdoc em português, escrito à mão (um formatador de uma vez só alinhou
+  os cabeçalhos à coluna 78; o arquivo não é gerado de nada), com linhas de até 78 colunas e a
+  modeline no fim. Tags: `deckle`, uma por seção (`deckle-install`, `deckle-commands`,
+  `deckle-config`, `deckle-layers`, `deckle-mermaid`, `deckle-images`, `deckle-sync`,
+  `deckle-highlights`, `deckle-api`, `deckle-health`, `deckle-limitations`), uma por opção
+  (`deckle-config-<caminho>`), uma por subcomando (`:Deckle-<nome>`), uma por grupo de highlight
+  (`hl-Deckle...`) e uma por evento `User`. As limitações vêm dos "Entregue" das fases 1 a 9.
+- **A documentação é conferida por teste, e cada caso liga o texto a uma fonte de verdade.**
+  `:helptags` roda num diretório temporário (o checkout não ganha `doc/tags`), sem erro, e um
+  Neovim filho abre `:help deckle` e as tags de formato difícil; toda `|tag|` existe, no doc ou
+  em `$VIMRUNTIME/doc/tags`; nenhuma linha passa de 78 colunas; toda chave de
+  `config.known_keys()` tem tag `deckle-config-<caminho>`; **o bloco de valores de fábrica do
+  doc e o do README, executados, são iguais a `config.defaults()`**; todo subcomando de
+  `init.lua`, todo evento que `preview.lua` emite e todo alvo de `install.release_targets()`
+  aparecem; todo grupo de `highlight.groups` tem tag com o padrão certo (`DeckleH1 (link:
+  Title)`); o piso de versão de `plugin/deckle.lua` é o de `health.lua`, do doc, do README e do
+  ADR; todo link relativo dos Markdown do projeto aponta para um arquivo que existe. Oito
+  mutações (tag de grupo removida, default alterado, `|tag|` inexistente, grupo novo sem doc, opção
+  nova sem doc, captura do README alterada, link quebrado, showcase sem o `pie`) fazem a suíte
+  falhar, e foram conferidas à mão.
+- **`config.known_keys()`** é a única mudança de código da fase: devolve as chaves aceitas em
+  cada nível, inclusive as de padrão `nil` (`width`, `native.path`) que `defaults()` não tem. Sem
+  ela o teste não enxergaria uma opção nova de padrão `nil`.
+- **O README tem a captura do render e o fonte dela, e a captura é a saída real.** O caso de
+  `tests/native/test_docs_native.lua` renderiza o fonte (60 colunas, Unicode, com o `.so`) e
+  compara com a captura, linha a linha sem o espaço do fim. Se o merman mudar a arte, ele falha. O
+  `scripts/test-native.sh` o roda, então o job `native` da CI o exige; no job `test`, sem Rust, é
+  pulado com aviso.
+- **`examples/showcase.md`** tem todo tipo de bloco (títulos ATX e setext, ênfases, listas
+  aninhadas até o quarto nível e de tarefa, citações em três níveis, tabelas com os três
+  alinhamentos, CJK e emoji, truncamento e linha curta, código `lua`, `c`, sem linguagem e de
+  linguagem inexistente, três diagramas `mermaid` (sequência, fluxograma e um `pie`, que degrada de
+  propósito), imagens, regra e HTML). `tests/test_showcase.lua` o renderiza em quatro larguras e
+  nos dois charsets sem `DeckleError`, abre o preview de verdade, confere que o IR tem todos os
+  tipos, e, com protocolo gráfico forjado, que a imagem sozinha vira 20 x 5 placeholders e que o
+  `:Deckle close` a apaga; sem protocolo, texto alternativo e nenhum byte no terminal. O PNG é
+  200 x 100, 2,6 KB, gerado à parte (RGB, sem dependência).
+- **Dois testes dependiam do terminal de quem os roda** e passaram a fixar `TERM` no filho
+  (`test_sync.lua`, o empate entre blocos, e `test_code.lua`, a cor na tela): com `TERM=dumb` ou
+  `linux` o `charset = "auto"` vira ASCII, e os dois procuravam um glifo Unicode. A suíte inteira
+  passa com `TERM=xterm-256color`, `dumb` e `linux`. O teste do README em `test_preview.lua`, que
+  exigia que o preview não tivesse `**` nem `# deckle.nvim`, passou a olhar só o texto antes da
+  primeira moldura de código, porque o README agora mostra Markdown de exemplo numa cerca.
+- **Comentário de `render/table.lua` e `docs/architecture.md`** diziam que a tabela mede com
+  `strdisplaywidth`, e ela usa `nvim_strwidth` (fase 4). A regra 6 do `CLAUDE.md` ganhou a
+  ressalva. O `CLAUDE.md` e o README descreviam as fases 0, 1, 2, 3, 6 e 8, com tabela, código e
+  HTML "como texto cru".
+- **packer:** a instalação por `run = ":Deckle install"` segue o que o lazy.nvim faz com
+  `build = ":Deckle install"` (que o código do lazy confirma: carrega o plugin antes do comando) e
+  o uso de `run = ":TSUpdate"` no nvim-treesitter, mas **não foi testada com o packer**.
+- **Não foi validado:** o `:help` com a cor do esquema do usuário (só as tags e o carregamento);
+  a instalação por packer; e nada do plugin numa UI de terminal de verdade (como nas fases
+  anteriores).
+
 ---
 
 ## Dependências entre fases
@@ -765,7 +826,8 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
   dos 39 casos. A causa não é bug — é `vim.validate` com a assinatura nova, que só existe a
   partir do 0.11, mais a guarda do `plugin/deckle.lua`, que se recusa a registrar `:Deckle`
   abaixo do piso e faz todo teste de despacho bater em `E492`. O job saiu da matriz em vez
-  de ficar permanentemente vermelho. Fica em **0.11.0**; vira ADR na fase 10.
+  de ficar permanentemente vermelho. Fica em **0.11.0**; virou o
+  [ADR-0005](adr/0005-piso-neovim-0-11.md) na fase 10.
 - **macOS e Windows.** ~~Nada foi testado. A fase 8 é a primeira que descobre.~~ **Medido na
   fase 8**: o módulo compila, instala pelo instalador e carrega num Neovim 0.11.0 de verdade em
   Linux x86_64 e aarch64, macOS x86_64 e arm64 e Windows x86_64, com as flags de

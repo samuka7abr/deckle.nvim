@@ -4,28 +4,40 @@ Preview de Markdown num buffer separado somente-leitura dentro do Neovim. Lua fa
 encosta na API do editor. Um `.so` opcional em Rust (via mlua) renderiza Mermaid em arte de
 texto usando o crate `merman`.
 
-**Estado: fases 0, 1, 2, 3, 6 e 8 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
-`parse`, `preview`, `sync`, `highlight`, `install`, `sha256`, `version` e `render/` com um módulo
-por tipo de bloco), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
-`crates/deckle-native/` com `Makefile`, a CI e o workflow de release.
-`require("deckle.install").info()` diz onde está o binário nativo e de onde veio, e é o que a
-fase 7 consome.
-`:Deckle open|close|toggle|refresh` funcionam: o render de texto e o buffer de preview estão
-prontos. `code`, `table` e `html` saem como texto cru (fallbacks de `render/code.lua`,
-`render/table.lua` e `render/html.lua`; as fases 4 e 5 trocam a implementação). O cursor do
-fonte e o do preview se seguem (`sync.lua`, `sync = "cursor"`): a busca binária sobre o mapa
-`preview -> fonte` do render é pura, e o anti-loop são dois mecanismos (flag reentrante e linha
-esperada por lado, ver o topo do módulo). Dois contratos em LuaCATS, e as fases 4, 5 e 7
-dependem deles: o IR no topo de `parse.lua` e o render (módulo por tipo, `ctx`, marcas, mapa)
-no topo de `render/init.lua`. Mudar um campo lá é mudar o contrato. Confira que um comando
-existe antes de rodá-lo.
+**Estado: fases 0 a 10 do roadmap entregues** (só falta a tag `v0.3.0`, que o roadmap manda sair
+com a fase 10; nenhuma tag foi criada até aqui). Existem `lua/deckle/` (`init`, `config`,
+`health`, `parse`, `preview`, `sync`, `highlight`, `native`, `install`, `sha256`, `version`,
+`caps`, `image/` com `init`, `kitty` e `png`, e `render/` com um módulo por tipo de bloco, mais
+`mermaid` e `image`), `plugin/deckle.lua`, `doc/deckle.txt` (o `:help`, escrito à mão),
+`examples/showcase.md`, `tests/` (mini.test), `scripts/`, o crate `crates/deckle-native/` com
+`Makefile`, a CI e o workflow de release.
+
+`:Deckle open|close|toggle|refresh|health|install` funcionam. Camada 0: texto, tabelas, código
+colorido por treesitter e html cru. Camada 1: Mermaid como arte de texto, pelo `deckle_native`
+(`deckle.native.get()`, `deckle.install.info()` diz onde está o binário e de onde veio). Camada 2:
+imagem PNG local por Unicode placeholders do protocolo do kitty (kitty e ghostty), com a detecção
+em `caps.lua`; iTerm2 e sixel são detectados e saem como texto alternativo. A camada 3 (`mmdc`)
+não existe. O cursor do fonte e o do preview se seguem (`sync.lua`, `sync = "cursor"`): a busca
+binária sobre o mapa `preview -> fonte` do render é pura, e o anti-loop são dois mecanismos (flag
+reentrante e linha esperada por lado, ver o topo do módulo). Dois contratos em LuaCATS, de que o
+resto depende: o IR no topo de `parse.lua` e o render (módulo por tipo, `ctx`, marcas, mapa) no
+topo de `render/init.lua`. Mudar um campo lá é mudar o contrato. Confira que um comando existe
+antes de rodá-lo.
+
+**A documentação é conferida por teste** (`tests/test_doc.lua`). Opção nova em `config.lua` (e em
+`known_keys`), grupo novo em `highlight.lua`, subcomando novo em `init.lua`, evento novo em
+`preview.lua` e alvo novo em `install.lua` sem entrada no `doc/deckle.txt` falham a suíte, e o
+bloco de valores de fábrica do `doc/deckle.txt` e o do README têm que ser iguais a
+`config.defaults()`. A captura do README é a saída real do render, conferida com o `.so`
+(`tests/native/test_docs_native.lua`). O `examples/showcase.md` é renderizado pela suíte e tem que
+continuar exercitando todo tipo de bloco.
 
 ## Leia antes de decidir
 
 - `docs/architecture.md` (camadas, pipeline, contrato Lua↔Rust, estrutura de diretórios)
 - `docs/roadmap.md` (fases, entregas, gates de saída, anti-escopo)
 - `docs/validation.md` (o que foi medido; os números vêm daqui)
-- `docs/adr/` (as quatro decisões travadas)
+- `docs/adr/` (as cinco decisões travadas)
 
 A seção 12 da arquitetura lista o que **não** foi validado. Não trate nada dela como fato.
 
@@ -51,7 +63,13 @@ escreva um ADR novo antes de escrever o código.
    passar diagrama inválido, esconder o parser da linguagem. Comentário dizendo que funciona
    não conta. (ADR-0004)
 6. **Largura de texto é `vim.fn.strdisplaywidth`, nunca `#str`.** Emoji e CJK entram no teste
-   junto com a feature, não depois.
+   junto com a feature, não depois. **Ressalva (fase 4):** em tabelas, e em qualquer alinhamento
+   por coluna, use `vim.api.nvim_strwidth`. O `strdisplaywidth` mede na **janela atual** e, com
+   `wrap` ligado, soma uma célula quando um caractere largo cai na última coluna dela. Uma
+   célula de CJK mais larga que a janela de quem chamou o render saía maior do que o preview
+   (sem `wrap`) desenha, e a linha da tabela ficava curta. O `nvim_strwidth` é a mesma medida
+   (emoji, `ambiwidth`, combinantes) sem depender da janela. É o que `render/table.lua` faz, e
+   tem teste de regressão.
 7. **Índices de linha são 0-indexados com fim exclusivo em todo o IR.** É o que o treesitter e
    a API de buffer usam. Converta nas bordas, nunca no meio.
 
@@ -59,7 +77,7 @@ escreva um ADR novo antes de escrever o código.
 
 | | valor | por quê |
 |---|---|---|
-| Neovim | piso **0.11.0** | é a única versão medida. 0.10 é suposição |
+| Neovim | piso **0.11.0** | medido: o 0.10.4 reprova 20 de 39 casos na CI (ADR-0005) |
 | Rust | `rust-toolchain.toml` em **1.95** | MSRV do merman |
 | merman-core / merman-ascii | `=0.8.0-alpha.6`, **idêntica nos dois** | alpha que quebra API entre versões |
 
@@ -108,7 +126,14 @@ suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir e
   entrega o evento sem laço nenhum, e basta para os handlers do preview, que ignoram o
   conteúdo do evento.
 - Todo `hl` que um módulo de render escreve nas marcas precisa existir em
-  `lua/deckle/highlight.lua`: há teste que varre o código-fonte atrás de `"Deckle..."`.
+  `lua/deckle/highlight.lua`: há teste que varre o código-fonte atrás de `"Deckle..."`. E todo
+  grupo de lá precisa de tag `hl-<grupo>` no `doc/deckle.txt`, com o padrão certo.
+- `charset = "auto"` vira ASCII com `TERM=linux` ou `dumb`, o que uma CI pode ter. Teste que
+  procura um glifo Unicode (`═`, `│`, `┌`) fixa `vim.env.TERM = "xterm-256color"` no Neovim
+  filho, em vez de depender do terminal de quem roda. A suíte inteira passa com os três.
+- Um `.so` local (`make native`) muda o que a suíte exercita: os casos que exigem o `.so` deixam
+  de ser pulados e os de "binário ausente" do `test_health.lua` passam a ser. Rode também sem
+  ele (`rm lua/deckle_native.so`) antes de abrir o PR, que é como o job `test` da CI roda.
 
 ## Fluxo de trabalho
 

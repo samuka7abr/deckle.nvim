@@ -36,6 +36,25 @@ T["defaults"]["`defaults()` devolve cópia, não a tabela viva"] = function()
   eq(config.defaults().split, "vsplit")
 end
 
+T["defaults"]["`known_keys()` cobre toda chave de `defaults()` e as que o padrão nil esconde"] = function()
+  local config = fresh()
+  local keys = config.known_keys()
+  -- `width` e `native.path` têm `nil` como padrão, então `defaults()` não os tem.
+  eq(vim.tbl_contains(keys[""], "width"), true)
+  eq(vim.tbl_contains(keys.native, "path"), true)
+  for key, value in pairs(config.defaults()) do
+    eq(vim.tbl_contains(keys[""], key), true)
+    if type(value) == "table" then
+      for sub in pairs(value) do
+        eq(vim.tbl_contains(keys[key], sub), true)
+      end
+    end
+  end
+  -- Devolve cópia, não a tabela viva.
+  keys[""][1] = "mutado"
+  eq(config.known_keys()[""][1], "split")
+end
+
 T["defaults"]["valem mesmo sem `setup()`"] = function()
   local config = fresh()
   eq(config.configured, false)

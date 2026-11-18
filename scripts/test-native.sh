@@ -4,7 +4,9 @@
 #   1. tests/native/native_headless.lua: o crate dentro do Neovim, e o processo sobrevive a
 #      erro de Rust (regressao de V2.2, fase 6);
 #   2. tests/native/test_mermaid_native.lua (mini.test): o mermaid no preview com o `.so` de
-#      verdade, o gate de saida da fase 7.
+#      verdade, o gate de saida da fase 7;
+#   3. tests/native/test_docs_native.lua (mini.test): o showcase com o mermaid desenhado e a
+#      captura do README, que e a saida real do render (fase 10).
 #
 # Uso:
 #   scripts/test-native.sh
@@ -49,4 +51,7 @@ esac
 # O mermaid no preview, com o `.so` de verdade. `scripts/test.sh` ja trata o exit 134 e baixa o
 # mini.nvim se faltar.
 DECKLE_REQUIRE_NATIVE=1 ./scripts/test.sh tests/native/test_mermaid_native.lua
+
+# A documentacao e o exemplo com o `.so`: a captura do README nao pode envelhecer.
+DECKLE_REQUIRE_NATIVE=1 ./scripts/test.sh tests/native/test_docs_native.lua
 echo "test-native: ok"

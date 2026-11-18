@@ -195,7 +195,8 @@ deckle.nvim/
 │   ├── image/            imagens da camada 2: estado e escrita (init), protocolo kitty, cabeçalho PNG
 │   └── health.lua        :checkhealth deckle
 ├── crates/deckle-native/ cdylib mlua → merman
-└── doc/deckle.txt        :help
+├── doc/deckle.txt        :help, escrito à mão; a suíte o confere contra o código
+└── examples/showcase.md  teste manual com todo tipo de bloco; a suíte o renderiza
 ```
 
 ## 9. Distribuição
@@ -241,7 +242,7 @@ Como ficou na fase 8:
 | Bug de render no nó losango `{...}` | baixa | cosmético, reportar upstream |
 | Diagrama grande custa ~46ms | média | debounce + cache por hash do bloco; render assíncrono |
 | Sincronia de scroll em documento grande | média | mapa é O(blocos), busca binária O(log n) |
-| Largura de emoji/CJK em tabelas | média | `vim.fn.strdisplaywidth`, nunca `#str` |
+| Largura de emoji/CJK em tabelas | média | `vim.api.nvim_strwidth` nas tabelas e `vim.fn.strdisplaywidth` no resto, nunca `#str` (ver a regra 6 do `CLAUDE.md`) |
 
 ## 11. Fases
 
@@ -256,8 +257,10 @@ Como ficou na fase 8:
 
 Honestidade sobre os limites da validação:
 
-- **Nada foi testado em Neovim 0.10.x.** Só existe 0.11.5 na máquina de teste. O piso de
-  versão suportada é uma decisão em aberto, não um fato medido.
+- **Piso de versão: medido na fase 0, decidido no [ADR-0005](adr/0005-piso-neovim-0-11.md).**
+  O Neovim 0.10.4 reprovou na CI (20 dos 39 casos), e o piso é 0.11.0. Foram exercitadas a
+  0.11.0 (CI), a 0.11.5 (máquina de desenvolvimento) e o nightly (CI). **Não foi exercitado:** o
+  Neovim entre 0.11.1 e 0.11.4 e qualquer estável acima da 0.11.5.
 - **macOS e Windows: medido na fase 8, com limites.** O módulo compila, é instalado pelo
   instalador e carrega, com a bateria de `native_headless.lua`, num Neovim **0.11.0** em Linux
   x86_64 e aarch64 (glibc), macOS x86_64 e arm64 (com `-undefined dynamic_lookup`) e Windows
@@ -278,7 +281,9 @@ Honestidade sobre os limites da validação:
   verdade abriu uma imagem do deckle**: kitty, ghostty e o repasse do tmux estão sem medida, e a
   proporção depende de uma célula suposta de 10 x 20 pixels. iTerm2 e sixel são detectados e
   caem em texto alternativo.
-- **A sincronia de scroll não tem protótipo.** É a parte de maior risco não validada.
+- **A sincronia de scroll foi implementada na fase 3** e testada em Neovim headless, com teclas
+  reais enviadas por RPC. **Não foi vista numa UI de terminal de verdade**, nem com `wrap`
+  ligado, dobras e `scrolloff` alto no fonte, nem pela roda do mouse.
 - **O comportamento de `merman` sob entrada malformada não foi explorado a fundo** —
   testei o caminho feliz e o tipo não suportado, não fuzzing.
 - **Cobertura real de cada um dos 14 tipos de diagrama foi auditada só no nível mínimo.**

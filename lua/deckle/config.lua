@@ -47,6 +47,14 @@ function M.defaults()
   return vim.deepcopy(defaults)
 end
 
+--- Chaves aceitas em cada nível (`""` é o topo, o resto são as tabelas aninhadas). Inclui as que
+--- têm `nil` como padrão e por isso não aparecem em `defaults()`. Cópia, para teste: é com ela que
+--- a suíte confere que toda opção está documentada em `doc/deckle.txt`.
+---@return table<string, string[]>
+function M.known_keys()
+  return vim.deepcopy(known_keys)
+end
+
 --- Tira o `arquivo.lua:123: ` que o `error()` de dentro do `vim.validate` cola na frente.
 --- O usuário precisa ler o que está errado na config dele, não o path do nosso fonte.
 ---@param msg any
