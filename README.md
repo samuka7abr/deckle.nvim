@@ -253,6 +253,12 @@ As principais, com o resto em `:help deckle-limitations`:
 - Oito tipos de Mermaid (`gantt`, `gitgraph`, `journey`, `kanban`, `mindmap`, `packet`,
   `timeline`, `treeView`) saem como texto estruturado, e não como desenho. Tipos como `pie`
   caem para código, com uma nota.
+- O merman não roteia as arestas que cruzam a borda de um `subgraph`. Nesse caso o diagrama
+  sai **sem as caixas dos grupos**, com a nota `mermaid: layout simplified (subgraphs
+  flattened)` abaixo do desenho. Nenhuma versão do merman os desenha inteiros.
+- O merman escreve a mais, em ER com atributos, em class com genéricos (`Box~T~`) e em
+  xychart com título ou várias séries, linhas como `type(bytes=3)="int" ...`. Não há opção
+  que as desligue, e o plugin não as filtra.
 - A quebra de linha de CJK não segue a regra de kinsoku: um `。` pode abrir uma linha.
 - Nada foi medido numa UI de terminal de verdade: os testes são headless.
 

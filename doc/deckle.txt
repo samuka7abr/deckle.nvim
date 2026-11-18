@@ -431,8 +431,36 @@ Um bloco `mermaid` sem linha nenhuma não desenha nada. Uma linha de diagrama
 mais larga que a janela fica inteira, porque o merman nunca trunca (perderia
 dado): a janela de preview rola na horizontal.
 
-Cada desenho fica guardado, por conteúdo, largura, charset e limite de linhas,
-em até 64 entradas. Re-renderizar o mesmo diagrama não volta a chamar o
+                                                      *deckle-mermaid-flatten*
+Uma falha **não** degrada o bloco: o merman não roteia as arestas que cruzam a
+borda de um `subgraph` (nem as de certos estados compostos, como um composto
+dentro de outro com transição) e desiste do diagrama inteiro, com
+`routes crossing reserved graph geometry`. Nesse caso, e só nele, o módulo
+desenha o diagrama de novo **sem as caixas dos grupos**: os mesmos nós e as
+mesmas arestas, sem os retângulos dos subgraphs. O bloco continua sendo arte,
+e uma nota (|hl-DeckleCodeNote|) logo abaixo avisa que o desenho não é fiel:
+>
+    mermaid: layout simplified (subgraphs flattened)
+    mermaid: layout simplified (composite states flattened)
+<
+Um subgraph que uma aresta cita (`API --> B`) vira um nó comum, com o título
+dele; o que nenhuma aresta cita some. É um achatamento do texto do diagrama,
+não um conserto do layout: um diagrama que o merman desenha inteiro nunca é
+achatado, e quando o achatado também falha o erro mostrado é o do original.
+
+                                                       *deckle-mermaid-colors*
+Com |deckle-config-mermaid.colors| ligado e `charset = "unicode"`, o que o
+diagrama estiliza aparece em cor: `classDef`, `style`, `linkStyle`,
+`box rgb(...)` e `rect rgb(...)`. O que não tem cor própria continua em
+|hl-DeckleMermaid|. A cor não muda o layout: o texto é o mesmo, célula por
+célula, do desenho sem cor.
+
+Entidades HTML (`&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#39;`) que o merman deixa
+literais nos rótulos de flowchart e state são decodificadas no desenho pronto,
+e a caixa continua alinhada.
+
+Cada desenho fica guardado, por conteúdo, largura, charset, limite de linhas e
+cor, em até 64 entradas. Re-renderizar o mesmo diagrama não volta a chamar o
 módulo.
 
 ==============================================================================
@@ -728,11 +756,47 @@ Tabelas e código
 Mermaid
 - Oito tipos saem como texto estruturado, e tipos como `pie` e `c4` caem para
   código (|deckle-mermaid|).
-- O merman está em alpha e quebra API entre versões, então o plugin pina a
-  versão exata. Um nó em losango, `{texto}`, num flowchart sai com a caixa
-  sobreposta: é um bug cosmético de layout do merman.
+- O merman quebra API entre versões, então o plugin pina a versão exata
+  (0.8.0). Um nó em losango, `{texto}`, num flowchart sai com a caixa
+  sobreposta, e o paralelogramo (`[/texto/]`) e o `lean-r` saem tortos: são
+  bugs cosméticos de layout do merman.
+- Diagrama com `subgraph` cujas arestas cruzam a borda do grupo pode sair sem
+  as caixas dos grupos, com a nota `mermaid: layout simplified (subgraphs
+  flattened)` (|deckle-mermaid-flatten|). Nenhuma versão do merman, da
+  0.8.0-alpha.6 à 0.10.0, desenha esses diagramas inteiros.
+- O merman escreve a mais, no desenho, o texto original de certos rótulos, e o
+  plugin não filtra (não há opção, e uma regex pegaria rótulo legítimo):
+  - ER com atributo: uma linha por atributo no formato
+    `type(bytes=3)="int" name(bytes=2)="id" keys=[] comment(bytes=0)=""`;
+  - class com genéricos (`Box~T~`): as linhas `text(bytes=12)="Box<T>"` e
+    `id(bytes=3)="Box"`, e `member(bytes=4)="User"` numa relação que cruza
+    `namespace`;
+  - xychart com `title` ou título de eixo (`titleDisplay: chart(bytes=6)=
+    "Vendas"`) e com mais de uma série (`values: █ series=0 ...`). Um xychart
+    de uma série só, sem título, com valores que caem na grade, sai limpo.
+- Entidades: `&#39;` sai `&'` (escreva `#39;`), e `&amp;lt;` sai `<`.
+- Degradam para código, com a nota `mermaid: <motivo>` abaixo do bloco (a nota
+  é cortada na largura do bloco):
+  - `@{ shape: cloud }` e `@{ shape: bolt }`: `mermaid: unsupported diagram:
+    ASCII rendering does not support `unsupported flowchart node shape
+    projections` for `flowchart` yet`;
+  - forma desconhecida, como `@{ shape: naoexiste }`: `mermaid: parse error:
+    Diagram parse error (flowchart-v2): No such shape: naoexiste.`;
+  - genéricos aninhados em class, com relação (`List~Pair~K,V~~`): `mermaid:
+    parse error: Diagram parse error (classDiagram): Unexpected character at
+    93`;
+  - alias de entidade em ER (`CUSTOMER["Cliente"]`): `mermaid: parse error:
+    Diagram parse error (er): unexpected only one; expected ...`;
+  - `pie`, `quadrantChart`, `c4` e `block`: `mermaid: unsupported diagram:
+    ASCII rendering does not support diagram type `pie``;
+  - mais linhas que |deckle-config-mermaid.max_src_lines|: `mermaid: source
+    too large: 201 lines exceeds the limit of 200 (max_src_lines)`;
+  - módulo nativo ausente ou desligado: `mermaid: native module unavailable
+    (:checkhealth deckle)` e `mermaid: native.enabled is false`.
 - O diagrama de 200 linhas (o limite) no re-render de um documento grande não
   foi medido.
+- O desenho colorido (|deckle-config-mermaid.colors|) foi conferido só em
+  Neovim headless, nunca num terminal de verdade.
 - O binário só é carregado uma vez por sessão: reinicie o Neovim depois de
   `:Deckle install`.
 
