@@ -4,19 +4,21 @@ Preview de Markdown num buffer separado somente-leitura dentro do Neovim. Lua fa
 encosta na API do editor. Um `.so` opcional em Rust (via mlua) renderiza Mermaid em arte de
 texto usando o crate `merman`.
 
-**Estado: fases 0, 1, 2, 6 e 8 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
-`parse`, `preview`, `highlight`, `install`, `sha256`, `version` e `render/` com um módulo por
-tipo de bloco), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
+**Estado: fases 0, 1, 2, 3, 6 e 8 do roadmap.** Existem `lua/deckle/` (`init`, `config`, `health`,
+`parse`, `preview`, `sync`, `highlight`, `install`, `sha256`, `version` e `render/` com um módulo
+por tipo de bloco), `plugin/deckle.lua`, `tests/` (mini.test), `scripts/test.sh`, o crate
 `crates/deckle-native/` com `Makefile`, a CI e o workflow de release.
 `require("deckle.install").info()` diz onde está o binário nativo e de onde veio, e é o que a
 fase 7 consome.
 `:Deckle open|close|toggle|refresh` funcionam: o render de texto e o buffer de preview estão
 prontos. `code`, `table` e `html` saem como texto cru (fallbacks de `render/code.lua`,
-`render/table.lua` e `render/html.lua`; as fases 4 e 5 trocam a implementação), e não existe
-sync: o mapa `preview -> fonte` já sai do render, mas ninguém o consome (fase 3). Dois
-contratos em LuaCATS, e as fases 3 a 5 e 7 dependem deles: o IR no topo de `parse.lua` e o
-render (módulo por tipo, `ctx`, marcas, mapa) no topo de `render/init.lua`. Mudar um campo
-lá é mudar o contrato. Confira que um comando existe antes de rodá-lo.
+`render/table.lua` e `render/html.lua`; as fases 4 e 5 trocam a implementação). O cursor do
+fonte e o do preview se seguem (`sync.lua`, `sync = "cursor"`): a busca binária sobre o mapa
+`preview -> fonte` do render é pura, e o anti-loop são dois mecanismos (flag reentrante e linha
+esperada por lado, ver o topo do módulo). Dois contratos em LuaCATS, e as fases 4, 5 e 7
+dependem deles: o IR no topo de `parse.lua` e o render (módulo por tipo, `ctx`, marcas, mapa)
+no topo de `render/init.lua`. Mudar um campo lá é mudar o contrato. Confira que um comando
+existe antes de rodá-lo.
 
 ## Leia antes de decidir
 

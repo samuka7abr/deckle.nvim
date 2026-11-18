@@ -8,7 +8,7 @@ Sem browser, sem servidor web, sem webview.
 
 ## Estado
 
-**Fases 0, 1, 2, 6 e 8 do [roadmap](docs/roadmap.md).** Existe o esqueleto — `:Deckle` com
+**Fases 0, 1, 2, 3, 6 e 8 do [roadmap](docs/roadmap.md).** Existe o esqueleto — `:Deckle` com
 subcomandos, configuração validada, `:checkhealth deckle`, suíte de testes e CI — o parser
 (`lua/deckle/parse.lua`, Markdown para IR via treesitter, com a forma do IR documentada no
 topo do módulo), o crate Rust `deckle-native`, a distribuição do binário dele (release por
@@ -17,11 +17,11 @@ abre um buffer somente-leitura ao lado, com títulos, parágrafos com wrap por l
 display (emoji e CJK incluídos), listas, citações e regras, re-renderizado com debounce quando
 o fonte muda e quando a janela é redimensionada.
 
-Tabelas, blocos de código e HTML saem como texto cru por enquanto (fases 4 e 5), e o preview
-ainda não acompanha o cursor do fonte (fase 3, sincronia de scroll). Os grupos de highlight
-(`DeckleH1` a `DeckleH6`, `DeckleCode`, `DeckleQuote` e outros, todos com `default` e linkados a
-grupos padrão) podem ser sobrescritos com `vim.api.nvim_set_hl`; a lista está em
-`lua/deckle/highlight.lua`.
+O preview acompanha o cursor do fonte e o inverso (`sync = "cursor"`, o default; `sync = "off"`
+desliga). Tabelas, blocos de código e HTML saem como texto cru por enquanto (fases 4 e 5). Os
+grupos de highlight (`DeckleH1` a `DeckleH6`, `DeckleCode`, `DeckleQuote` e outros, todos com
+`default` e linkados a grupos padrão) podem ser sobrescritos com `vim.api.nvim_set_hl`; a lista
+está em `lua/deckle/highlight.lua`.
 
 A arquitetura foi validada empiricamente — ver [`docs/validation.md`](docs/validation.md)
 para o que foi medido e o que ainda é suposição.
