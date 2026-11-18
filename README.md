@@ -194,7 +194,7 @@ require("deckle").setup({
   sync = "cursor",
   debounce_ms = 120,
   native = { enabled = true, path = nil },
-  mermaid = { max_src_lines = 200 },
+  mermaid = { max_src_lines = 200, colors = true },
   images = { enabled = "auto", max_height = 20 },
 })
 ```
@@ -209,6 +209,7 @@ require("deckle").setup({
 | `native.enabled` | booleano | `false` nunca carrega o binário nativo |
 | `native.path` | string, ou `nil` | caminho explícito do binário; se configurado e não carregar, não cai para outro |
 | `mermaid.max_src_lines` | inteiro > 0 | acima disso o bloco `mermaid` vira código, com uma nota |
+| `mermaid.colors` | booleano | cor dos diagramas (`classDef`, `style`, `linkStyle`, `box rgb`, `rect rgb`); `false`, ou `charset = "ascii"`, desenha em texto puro |
 | `images.enabled` | `"auto"`, `true`, `false` | `true` assume o risco de SSH e tmux sem confirmação |
 | `images.max_height` | inteiro > 0 | teto, em linhas, de uma imagem |
 

@@ -276,7 +276,7 @@ Valores de fábrica:
       sync = "cursor",
       debounce_ms = 120,
       native = { enabled = true, path = nil },
-      mermaid = { max_src_lines = 200 },
+      mermaid = { max_src_lines = 200, colors = true },
       images = { enabled = "auto", max_height = 20 },
     })
 <
@@ -334,6 +334,18 @@ mermaid.max_src_lines                    *deckle-config-mermaid.max_src_lines*
     Um bloco `mermaid` com mais linhas que isso é recusado pelo módulo antes
     do layout, que é o que custa caro (dezenas de milissegundos num diagrama
     grande): vira código, com uma nota.
+
+mermaid.colors                                  *deckle-config-mermaid.colors*
+    Tipo: booleano. Padrão: `true`.
+    Liga a cor dos diagramas: o módulo nativo desenha em TrueColor e o que
+    o diagrama pede (`classDef`, `style`, `linkStyle`, `box rgb(...)` e
+    `rect rgb(...)`) aparece em cor no preview. As cores são RGB e precisam
+    de |'termguicolors'|. O texto e as bordas sem cor própria continuam no
+    grupo |hl-DeckleMermaid|, que segue o seu esquema de cores: a cor de
+    tema do merman, feita para fundo claro, nunca chega ao preview.
+    Com `false`, ou com |deckle-config-charset| em `"ascii"`, o desenho é o
+    de sempre, em texto puro. Mudar a opção vale no próximo render, porque
+    o cache guarda o desenho colorido e o puro em entradas separadas.
 
 images                                                  *deckle-config-images*
     Tabela com as opções da camada 2, abaixo (|deckle-images|).
@@ -401,9 +413,10 @@ Tipos de diagrama que o renderizador de texto cobre (15), pelo nome que o
 módulo informa: `class`, `er`, `flowchart`, `gantt`, `gitgraph`, `journey`,
 `kanban`, `mindmap`, `packet`, `sequence`, `state`, `swimlane`, `timeline`,
 `treeView` e `xychart`. A lista de verdade vem do módulo, em tempo de
-execução, e o checkhealth a mostra. Oito deles (`gantt`, `gitgraph`, `journey`, `kanban`,
-`mindmap`, `packet`, `timeline`, `treeView`) saem como texto estruturado, e
-não como um desenho: é a projeção primária deles no merman.
+execução, e o checkhealth a mostra. Oito deles (`gantt`, `gitgraph`,
+`journey`, `kanban`, `mindmap`, `packet`, `timeline`, `treeView`) saem como
+texto estruturado, e não como um desenho: é a projeção primária deles no
+merman.
 
 Qualquer falha degrada só aquele bloco, para um bloco de código com moldura e
 o rótulo `mermaid`, mais uma nota discreta (|hl-DeckleCodeNote|) logo abaixo:

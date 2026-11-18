@@ -25,7 +25,7 @@ T["defaults"]["são os valores do roadmap"] = function()
   eq(d.sync, "cursor")
   eq(d.debounce_ms, 120)
   eq(d.native, { enabled = true })
-  eq(d.mermaid, { max_src_lines = 200 })
+  eq(d.mermaid, { max_src_lines = 200, colors = true })
   eq(d.images, { enabled = "auto", max_height = 20 })
 end
 
@@ -153,6 +153,23 @@ T["validação"]["recusa max_src_lines não-positivo"] = function()
   expect_error(function()
     config.setup({ mermaid = { max_src_lines = 0 } })
   end, "mermaid.max_src_lines: expected a positive integer")
+end
+
+T["validação"]["mermaid.colors: aceita true e false, recusa o resto"] = function()
+  for _, value in ipairs({ true, false }) do
+    eq(fresh().setup({ mermaid = { colors = value } }).mermaid.colors, value)
+  end
+  -- Sem a chave, vale o padrão, e a irmã não cai.
+  local merged = fresh().setup({ mermaid = { max_src_lines = 50 } })
+  eq(merged.mermaid, { max_src_lines = 50, colors = true })
+  for _, bad in ipairs({ "yes", 1, "true" }) do
+    local config = fresh()
+    expect_error(function()
+      config.setup({ mermaid = { colors = bad } })
+    end, "mermaid.colors: expected boolean")
+    -- Configuração inválida deixa a anterior intacta.
+    eq(config.options.mermaid.colors, true)
+  end
 end
 
 T["validação"]["images: aceita auto, true e false"] = function()
