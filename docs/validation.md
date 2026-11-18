@@ -372,6 +372,147 @@ deles tem `assert` no scanner como o de Markdown (V6), e o tempo numa UI de term
 
 ---
 
+## V11 — merman 0.8.0, subgraphs, cor e saída suja (branch `fix/mermaid-showcase`)
+
+**Por quê importa:** dois diagramas reais do usuário (o ILZA: uma arquitetura com 11 subgraphs
+aninhados, 8 deles com `direction`, e um mapa de módulos com 9 subgraphs) não renderizavam, e o
+showcase novo precisava saber o que o merman faz de verdade antes de prometer cobertura.
+Medido em 2026-11-17 e 2026-11-18, rustc 1.95, Linux x86_64.
+
+### Os diagramas do ILZA falham em toda versão do merman
+
+Mesmos dois arquivos (`crates/deckle-native/tests/fixtures/ilza_*.mmd`), quatro versões:
+
+| versão | resultado |
+|---|---|
+| `0.8.0-alpha.6` | `routes crossing reserved graph geometry` |
+| `0.8.0` | `routes crossing reserved graph geometry` |
+| `0.9.4` | `routes crossing reserved graph geometry` e `unroutable graph edges` |
+| `0.10.0` | `routes crossing reserved graph geometry` e `unroutable graph edges` |
+
+- **Origem:** `merman-ascii/src/graph/routing.rs`. Uma aresta que cruza a borda de um
+  `subgraph` tem poucos candidatos de rota, e quando nenhum passa, o renderer desiste do
+  grafo inteiro. Nenhuma opção pública contorna: o perfil `Compact` (medido, nos dois
+  diagramas, na 0.8.0) falha igual.
+- **Menor caso** (ddmin, `tools/ddmin.py` do laboratório): nove linhas. Uma aresta que sai de
+  um subgraph e entra no **primeiro** nó de outro falha; no segundo nó, o merman roteia.
+
+  ```
+  flowchart TB
+    subgraph API
+      h1[h1]
+    end
+    subgraph Temporal
+      t1[t1]
+      t2[t2]
+    end
+    API --> t1        %% falha; `API --> t2` desenha
+  ```
+- **Achatar resolve.** Tirar as linhas `subgraph`, o `end` e o `direction` de dentro faz os
+  dois renderizarem nas quatro versões. Medido com o fallback do plugin (`flatten.rs`): o mapa
+  de módulos sai com 95 colunas por 167 linhas, e a arquitetura com 326 colunas por 117 linhas
+  (363 por 117 quando o subgraph citado por uma aresta é trocado pelo primeiro nó dele, em vez
+  de virar um nó com o título: o plugin escolheu o nó com título, que não desloca os índices do
+  `linkStyle` e diz o que a aresta liga). O resultado carrega `simplified = "subgraphs"` e o
+  preview mostra a nota `mermaid: layout simplified (subgraphs flattened)`. O mesmo vale para
+  estado composto aninhado com transição (`routes crossing reserved graph geometry` para
+  `state`), que vira `(composite states flattened)`.
+- Custo do fallback (o render que falha mais o achatado), release: **~51 ms** a arquitetura
+  e **~21 ms** o mapa de módulos; em debug, ~140 ms o mapa de módulos. O cache do plugin
+  guarda o resultado, então isso é pago uma vez por diagrama e largura.
+
+### 0.8.0 contra a alpha.6, e por que não a 0.10.0
+
+- A 0.8.0 compila com o `render.rs` da alpha.6 **sem mudar uma linha**, mas só com
+  `features = ["all-diagrams"]` nos dois crates: sem elas o parser de flowchart não é compilado
+  e o tipo some. A 0.8.0 tem o 15º tipo, `swimlane` (que se escreve `swimlane-beta`).
+- A 0.10.0 pede porte de API (`SemanticParser` e `render_parsed_report`, crate `merman-model`)
+  e regride o roteamento: **não entrou**.
+- Benchmark do `make bench` (mediana, release, mesma máquina, os mesmos grafos). As duas
+  primeiras colunas rodam o `render.rs` original; a terceira é o código desta branch (tema de
+  cor, limpeza de entidades e fallback já ligados, em modo Plain). Uma rodada por coluna, então
+  a diferença de poucos ms entre a 2ª e a 3ª é ruído:
+
+  | caso | alpha.6 | 0.8.0 | esta branch |
+  |---|---|---|---|
+  | flowchart médio (6 arestas) | 1,66 ms | 1,37 ms | 1,25 ms |
+  | grande e fundo (48 arestas, 405 linhas) | 53,0 ms | 28,0 ms | 20,3 ms |
+  | grande e largo (48 arestas, 45 linhas) | 24,1 ms | 12,4 ms | 16,6 ms |
+
+### Matriz de recursos na 0.8.0
+
+151 casos (formas, arestas, subgraphs, estilos, entidades e os 15 tipos), cada um renderizado
+na alpha.6, na 0.8.0 e na 0.10.0; na 0.8.0, **141 desenham** e 10 não:
+
+| caso | resultado na 0.8.0 |
+|---|---|
+| `@{ shape: cloud }`, `@{ shape: bolt }` | `unsupported diagram: ASCII rendering does not support `unsupported flowchart node shape projections` for `flowchart` yet` |
+| `@{ shape: naoexiste }` | `mermaid parse error: Diagram parse error (flowchart-v2): No such shape: naoexiste.` |
+| generics aninhados em class (`List~Pair~K,V~~` com relação) | `mermaid parse error: Diagram parse error (classDiagram): Unexpected character at 93` |
+| ER com alias (`CUSTOMER["Cliente"]`) | `mermaid parse error: Diagram parse error (er): unexpected only one; expected ...` |
+| composto dentro de composto, em state | roteamento: **conserta o fallback** |
+| `pie`, `quadrantChart`, `c4`, `block` | `unsupported diagram: ASCII rendering does not support diagram type `<tipo>`` |
+
+Desenham, mas com defeito, e **não** são erro:
+
+- Paralelogramo `[/ x /]` e `lean-r`: o desenho sai torto (a moldura inclinada se sobrepõe).
+- Nó losango `{x}`: a caixa sobreposta de V5.
+
+### Texto que o merman escreve a mais: o `bytes=`
+
+O merman-ascii 0.8.0 tem um mecanismo de **divulgação do texto autoral**: quando o texto que
+ele desenha não é, byte a byte, o que o autor escreveu (HTML decodificado, quebra de linha,
+espaço normalizado, rótulo diferente do id), acrescenta ao desenho uma linha com o original,
+como `text(bytes=12)="Box<T>"`. **Não há opção** que o desligue (`AsciiRenderOptions` tem
+`relation_summary_diagnostics`, que não é isso e já vem `false`), e o formato não é estável o
+bastante para filtrar por regex sem pegar rótulo legítimo. **Registrado como limitação, não
+filtrado.** Onde aparece:
+
+| diagrama | quando |
+|---|---|
+| ER | **sempre** que a entidade tem atributo: cada um sai `type(bytes=3)="int" name(bytes=2)="id" keys=[] comment(bytes=0)=""` (`er/render.rs`) |
+| class | rótulo diferente do id (`Box~T~` sai `Box<T>`, mais `text(bytes=..)` e `id(bytes=..)`) e relação que cruza `namespace` (`member(bytes=..)`) |
+| xychart | com `title` ou título de eixo (`titleDisplay: chart(bytes=6)="Vendas"`) e com mais de uma série ou valor que a grade não representa exato (`values: █ series=0 ... samples=[...]`) |
+
+Um xychart de uma série só, sem título, com valores que caem na grade de 5 linhas (múltiplos
+de 20 num eixo de 0 a 100), sai sem nenhuma linha extra.
+
+### Entidades HTML
+
+Em flowchart e state, `&lt;` fica literal no rótulo. A causa não é falta de decodificação: o
+merman decodifica entidades (`&gt;`, `&amp;`, `&quot;`, `&apos;` e o `#9829;` do Mermaid saem
+certos), mas devolve `<` como `&lt;` (a saída dele é pensada para HTML), e a caixa já foi
+dimensionada para os 4 caracteres. O `clean.rs` decodifica `&lt;`, `&gt;`, `&amp;`, `&quot;` e
+`&#39;` nas linhas prontas, devolvendo as células poupadas como espaços ao redor do texto do
+nó (centralizado continua centralizado), e passa por todos os 15 tipos. Dois casos que a
+limpeza **não** conserta:
+
+- `&#39;` sai `&'`: o merman consome o `#39;` como código de entidade do Mermaid e deixa o
+  `&`. Escreva `#39;` (que sai `'`).
+- `&amp;lt;` já sai `&lt;` do merman, e a limpeza o decodifica de novo: aparece `<`.
+
+### Cor
+
+Em TrueColor o merman pinta **todo** elemento com a cor do papel no tema dele, não só o que o
+diagrama estiliza: um `flowchart` sem `classDef` sai com texto `#27272a`, borda `#a1a1aa` e
+seta `#52525b`, de um tema claro, que iriam por cima de qualquer esquema escuro. Honra
+`classDef` (`fill`, `stroke`, `color`), `style`, `linkStyle`, `box rgb(...)` e `rect rgb(...)`.
+O crate monta um tema em que todo papel "de moldura" tem uma cor-sentinela e tira os escapes
+dela das linhas: sobra só a cor que o diagrama pediu, e as séries do xychart. Medido: com a
+cor, o texto sem escapes é **idêntico** ao do modo Plain (linha por linha, nos 15 tipos, nos
+dois ILZA, em largura 40 e 120). O fundo de um nó estilizado cobre as bordas e os espaços,
+mas não as células de texto (o merman emite o texto só com a cor de frente).
+
+### Não foi medido
+
+- O desenho colorido num terminal de verdade (só o texto e as marcas, em Neovim headless).
+- O custo do fallback em release foi medido uma vez por diagrama (acima), sem repetições.
+- macOS e Windows com as dependências novas da 0.8.0 (`dugong`, `lol_html`, `cssparser`): o
+  `Cargo.lock` as resolve, e a CI de release as compila, mas nada as executou nesses alvos
+  fora da CI.
+
+---
+
 ## Como reproduzir
 
 Os spikes vivem em `/tmp` e são descartáveis. Para refazer:
