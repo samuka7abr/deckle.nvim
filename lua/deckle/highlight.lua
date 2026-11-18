@@ -36,6 +36,8 @@ M.groups = {
   DeckleBullet = { link = "Special" },
   DeckleRule = { link = "Comment" },
   DeckleHtml = { link = "Comment" },
+  DeckleTableHeader = { link = "Title" },
+  DeckleTableBorder = { link = "Comment" },
 
   -- Bloco que o render não conseguiu desenhar.
   DeckleError = { link = "WarningMsg" },
