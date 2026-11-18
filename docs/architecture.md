@@ -100,7 +100,7 @@ local ok, lines = pcall(native.render, src, {
 -- ok == false → `lines` é uma string de uma linha com o motivo; o bloco degrada para código cru
 -- ok == true  → `lines` é string[] (sem "\n"), pronta para nvim_buf_set_lines
 
-native.supported_types()  -- string[]: os 14 tipos do renderer de texto, lidos do merman
+native.supported_types()  -- string[]: os 15 tipos do renderer de texto, lidos do merman
 native.version()          -- string: versão do crate deckle-native
 ```
 
@@ -237,7 +237,7 @@ Como ficou na fase 8:
 
 | Risco | Gravidade | Mitigação |
 |---|---|---|
-| `merman` está em alpha e quebra API entre versões | alta | versão **pinada exata** (`=0.8.0-alpha.6`); binário pré-compilado isola o usuário |
+| `merman` quebra API entre versões | alta | versão **pinada exata** (`=0.8.0`, com `all-diagrams`); binário pré-compilado isola o usuário |
 | MSRV do merman é 1.95 (bem recente) | média | CI controla a toolchain; só afeta quem compila local |
 | Bug de render no nó losango `{...}` | baixa | cosmético, reportar upstream |
 | Diagrama grande custa ~46ms | média | debounce + cache por hash do bloco; render assíncrono |

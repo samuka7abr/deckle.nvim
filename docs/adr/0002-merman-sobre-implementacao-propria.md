@@ -90,3 +90,41 @@ Decisões de uso da API que a fase 6 tomou, para o próximo que for subir a vers
   aceitam). Se ainda passar, a linha larga é devolvida inteira: o merman nunca trunca.
 - Contexto de operação determinístico (`RuntimePolicy::deterministic`), com relógio fixo:
   diagramas que dependem da data de hoje, como o `gantt`, não enxergam a data real.
+
+## merman 0.8.0 (reconferido em 2026-11-18)
+
+**Decisão: `merman-core` e `merman-ascii` em `=0.8.0`, idênticos nos dois, com
+`features = ["all-diagrams"]` nos dois.** Substitui o pino `=0.8.0-alpha.6` da seção anterior,
+que fica como registro do que a fase 6 mediu.
+
+Medido nas quatro versões (`0.8.0-alpha.6`, `0.8.0`, `0.9.4`, `0.10.0`) com os mesmos
+diagramas (a investigação está resumida em [V11](../validation.md#v11--merman-080-e-os-subgraphs)):
+
+- **Os diagramas reais do usuário (ILZA) não renderizam em nenhuma delas.** O erro é
+  `routes crossing reserved graph geometry` (na 0.9 e na 0.10, também
+  `unroutable graph edges`) e nasce em `merman-ascii/src/graph/routing.rs`: aresta que cruza
+  a borda de um `subgraph` tem poucos candidatos de rota. Nenhuma opção pública contorna.
+  Trocar de versão, portanto, **não** resolve o problema; quem resolve é o fallback de
+  achatamento do `render.rs` (abaixo).
+- **A 0.8.0 compila com o `render.rs` da alpha.6 sem mudar uma linha**, mas só com
+  `all-diagrams`: sem a feature o parser de flowchart não é compilado e o tipo some, sem erro de
+  build. O `check-merman-version.sh` confere as duas coisas.
+- **A 0.8.0 é mais rápida** no flowchart grande (21,6 ms contra 39,5 ms da alpha.6, medido com
+  o mesmo diagrama e o mesmo perfil) e acrescenta um 15º tipo, `swimlane`.
+- **A 0.10.0 não serve.** Exige porte de API (o `Engine` e o `render_model_report` dão lugar a
+  `SemanticParser` e `render_parsed_report`, com um crate novo, `merman-model`, para os
+  tipos compartilhados) e **regride o roteamento**: diagramas que a 0.8.0 desenha passam a
+  falhar com `unroutable graph edges`. A 0.9.4 tem o mesmo defeito. Subir além da 0.8.0 só vale
+  quando houver uma versão que, medida com o mesmo conjunto de diagramas, não perca nenhum caso.
+- O tipo novo se escreve `swimlane-beta` (a forma `swimlane` sozinha não é detectada), com
+  `subgraph` como raia.
+
+Consequências:
+
+- O renderer cobre **15 tipos** (`ascii_supported_diagram_types()` lista `swimlane` além dos 14
+  anteriores). A guarda `fixtures_cover_exactly_the_supported_types` em `render_tests.rs` passou
+  de 14 para 15.
+- O pino vive nos mesmos quatro lugares de antes (`Cargo.toml`, `check-merman-version.sh`,
+  este ADR e o `CLAUDE.md`), e agora o `Cargo.lock` registra também as dependências novas da
+  0.8.0 (`dugong`, `lol_html`, `cssparser`...). O instalador continua baixando o binário pronto,
+  então o usuário final não compila nada disso.

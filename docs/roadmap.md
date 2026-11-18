@@ -835,5 +835,6 @@ Registrado aqui para não voltar como ideia a cada duas semanas:
   V9 em `docs/validation.md`.
 - **Versão do merman.** O pin de `0.8.0-alpha.6` veio da validação de 2026-09-06. ~~Reconferir
   na fase 6.~~ **Reconferido na fase 6 (2026-11-17)**: o pin fica, mas já existem `0.8.0` e
-  `0.10.0` na crates.io. Subir é um PR próprio; ver ADR-0002.
+  `0.10.0` na crates.io. Subir é um PR próprio; ver ADR-0002. **Subiu para `0.8.0`**
+  (2026-11-18, branch `fix/mermaid-showcase`): a `0.10.0` regride o roteamento e não entrou.
 - **Sobrevivência da camada 2.** Decidir depois da v0.2.0, com uso real na mão.

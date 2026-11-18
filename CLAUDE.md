@@ -79,10 +79,11 @@ escreva um ADR novo antes de escrever o código.
 |---|---|---|
 | Neovim | piso **0.11.0** | medido: o 0.10.4 reprova 20 de 39 casos na CI (ADR-0005) |
 | Rust | `rust-toolchain.toml` em **1.95** | MSRV do merman |
-| merman-core / merman-ascii | `=0.8.0-alpha.6`, **idêntica nos dois** | alpha que quebra API entre versões |
+| merman-core / merman-ascii | `=0.8.0`, **idêntica nos dois**, com `features = ["all-diagrams"]` | quebra API entre versões; a 0.10.0 regride o roteamento (ADR-0002) |
 
 Com rustc 1.93 o cargo resolve merman para `0.7.0-alpha.1` **sem avisar**, e essa versão não
-suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir em frente.
+suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir em frente. Sem
+`all-diagrams` o merman 0.8.0 compila, mas o flowchart some: o `check-merman-version.sh` confere.
 
 ## Armadilhas já pagas uma vez
 
