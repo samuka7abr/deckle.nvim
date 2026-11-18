@@ -30,7 +30,10 @@ antes de rodá-lo.
 bloco de valores de fábrica do `doc/deckle.txt` e o do README têm que ser iguais a
 `config.defaults()`. A captura do README é a saída real do render, conferida com o `.so`
 (`tests/native/test_docs_native.lua`). O `examples/showcase.md` é renderizado pela suíte e tem que
-continuar exercitando todo tipo de bloco.
+continuar exercitando todo tipo de bloco. O `examples/mermaid.md` (um diagrama grande de cada um
+dos 14 tipos, os dois do README do ILZA e um `pie`) é o teste do Mermaid: o `cargo test` renderiza
+cada bloco dele, e o job `native` abre o arquivo no preview e exige que nenhum bloco degrade,
+salvo o `pie` (`tests/native/test_mermaid_showcase_native.lua`).
 
 ## Leia antes de decidir
 
@@ -79,10 +82,11 @@ escreva um ADR novo antes de escrever o código.
 |---|---|---|
 | Neovim | piso **0.11.0** | medido: o 0.10.4 reprova 20 de 39 casos na CI (ADR-0005) |
 | Rust | `rust-toolchain.toml` em **1.95** | MSRV do merman |
-| merman-core / merman-ascii | `=0.8.0-alpha.6`, **idêntica nos dois** | alpha que quebra API entre versões |
+| merman-core / merman-ascii / merman-model | `=0.10.0`, **idêntica nos três** | quebra API entre versões; o `OperationControl` mora no `merman-model` (ADR-0002) |
 
-Com rustc 1.93 o cargo resolve merman para `0.7.0-alpha.1` **sem avisar**, e essa versão não
-suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir em frente.
+Com rustc 1.93 e um pin frouxo o cargo resolvia merman para `0.7.0-alpha.1` **sem avisar**, e
+essa versão não suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir
+em frente: é o `=` do `Cargo.toml`, o `--locked` e o `scripts/check-merman-version.sh`.
 
 ## Armadilhas já pagas uma vez
 
@@ -102,6 +106,21 @@ suporta `sequenceDiagram`. O build precisa falhar alto nesse caso, não seguir e
   bater com ela (o `release.yml` confere). O instalador monta a URL `v<versão>` a partir dela.
 - O `Cargo.lock` é versionado (o crate gera binário distribuído) e todo build de release usa
   `--locked`: é o que impede o cargo de resolver o merman para outra versão sem avisar.
+- O merman `0.10.0` não traz família nenhuma por padrão: `merman-core` entra com
+  `all-diagrams` e `merman-ascii` com as 14 famílias, uma a uma, **sem** `diagram-swimlane`
+  (com ele o `supported_types()` passa a ter 15 e o plugin documenta 14). O `OperationControl`
+  vem de `merman-model`, que a `0.10.0` não reexporta.
+- O layout de texto do merman **não roteia todo flowchart** (aresta que cruza a borda de um
+  subgraph, traços diferentes que se cruzam) **nem todo `state`** (estado composto fora da forma
+  mais simples). O crate tem um degrau de simplificação só para o flowchart
+  (`render.rs`, "Degrau de simplificacao"): tira o traço, as bordas dos subgraphs ou os dois, e
+  devolve `lines, notice`. `render/mermaid.lua` põe o aviso numa linha `DeckleCodeNote` sob o
+  desenho, **sem** o prefixo `mermaid:` (que é só da degradação). O `state` que não roteia
+  continua erro, e isso está pinado em `render_tests.rs`
+  (`only_the_flowchart_has_a_simplification_step`): se uma versão nova rotear, o teste falha e o
+  `doc/deckle.txt` ("Limitações conhecidas") tem que mudar.
+- Diagrama que não desenha **no showcase** não se esconde: ou ganha o degrau, ou sai do
+  `examples/mermaid.md` com a mensagem exata do merman em "Limitações conhecidas".
 - Um `.so` velho no lugar faz o teste passar com `attempt to call a nil value`, que parece
   sucesso e não é. Trave o script se o build falhar. Aconteceu duas vezes durante a validação.
 - Sempre confira o exit code do `nvim --headless`. **134 é abort**, não falha de teste.

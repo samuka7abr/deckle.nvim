@@ -11,20 +11,28 @@
 //! entregaria ao Lua como userdata, e `tostring` dele anexa um `stack traceback` que nao serve
 //! para mostrar ao usuario. Por isso a funcao nativa devolve `(lines, nil)` ou `(nil, msg)` e
 //! um wrapper Lua minusculo faz o `error`.
+//!
+//! # Aviso de simplificacao
+//!
+//! Quando o layout teve que ser simplificado para desenhar (`render.rs`, "Degrau de
+//! simplificacao"), `render` devolve um segundo valor: `lines, notice`, onde `notice` e uma
+//! string de uma linha. Sem simplificacao o segundo valor e `nil`, entao quem so quer as linhas
+//! pode ignora-lo.
 
 use mlua::prelude::*;
 
 use crate::render::{self, Charset, RenderError, RenderOptions};
 
-/// Wrapper que transforma `(nil, msg)` em `error(msg, 0)`. Recebe a funcao nativa como `...`.
+/// Wrapper que transforma `(nil, msg)` em `error(msg, 0)` e devolve `lines, notice`. Recebe a
+/// funcao nativa como `...`, que responde `(lines, nil, notice)` ou `(nil, msg, nil)`.
 const RENDER_WRAPPER: &str = r#"
 local raw = ...
 return function(src, opts)
-  local lines, err = raw(src, opts)
+  local lines, err, notice = raw(src, opts)
   if lines == nil then
     error(err, 0)
   end
-  return lines
+  return lines, notice
 end
 "#;
 
@@ -48,16 +56,17 @@ pub fn module(lua: &Lua) -> LuaResult<LuaTable> {
     Ok(exports)
 }
 
-/// `render_raw(src, opts?) -> lines | (nil, msg)`. Nunca levanta erro de Lua por conta propria:
-/// argumento do tipo errado tambem vira `(nil, msg)`.
-fn render_raw(
-    _: &Lua,
-    (src, opts): (LuaValue, LuaValue),
-) -> LuaResult<(Option<Vec<String>>, Option<String>)> {
-    let result = parse_args(&src, &opts).and_then(|(src, opts)| render::render(&src, &opts));
+/// O que a funcao nativa devolve ao wrapper Lua: `(lines, nil, notice)` ou `(nil, msg, nil)`.
+type RawReply = (Option<Vec<String>>, Option<String>, Option<String>);
+
+/// `render_raw(src, opts?) -> (lines, nil, notice) | (nil, msg, nil)`. Nunca levanta erro de Lua
+/// por conta propria: argumento do tipo errado tambem vira `(nil, msg, nil)`.
+fn render_raw(_: &Lua, (src, opts): (LuaValue, LuaValue)) -> LuaResult<RawReply> {
+    let result =
+        parse_args(&src, &opts).and_then(|(src, opts)| render::render_with_notice(&src, &opts));
     Ok(match result {
-        Ok(lines) => (Some(lines), None),
-        Err(err) => (None, Some(err.to_string())),
+        Ok(rendered) => (Some(rendered.lines), None, rendered.notice),
+        Err(err) => (None, Some(err.to_string()), None),
     })
 }
 

@@ -339,7 +339,7 @@ local function relative_links(lines)
 end
 
 T["readme"]["todo link relativo dos Markdown do projeto aponta para um arquivo que existe"] = function()
-  local files = { "README.md", "CLAUDE.md", "examples/showcase.md" }
+  local files = { "README.md", "CLAUDE.md", "examples/showcase.md", "examples/mermaid.md" }
   vim.list_extend(files, vim.fn.glob(H.repo_root .. "/docs/**/*.md", false, true))
   local broken = {}
   for _, file in ipairs(files) do

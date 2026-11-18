@@ -172,6 +172,9 @@ local muito_comprido = "esta linha de código é propositalmente longa para pass
 
 ## Mermaid
 
+Um showcase só de Mermaid, com um diagrama grande de cada um dos 14 tipos que o
+renderer de texto cobre, está em [mermaid.md](mermaid.md).
+
 Diagrama de sequência (camada 1, precisa do binário nativo; sem ele o bloco aparece
 como código, com uma nota):
 

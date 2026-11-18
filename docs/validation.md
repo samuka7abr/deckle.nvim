@@ -214,6 +214,107 @@ ao vivo; 46ms exige debounce e cache por hash do bloco.
 
 ---
 
+## V5b — Onde o layout de texto do merman para, e o que a 0.10.0 muda
+
+**Por quê importa:** um bug report real (o primeiro diagrama do README do projeto ILZA, um
+`flowchart TB` com subgraphs aninhados e `direction` diferentes, mais o terceiro bloco do mesmo
+README, um `graph LR` com subgraphs) caía em
+`unsupported diagram: ASCII rendering does not support `routes crossing reserved graph
+geometry` for `flowchart` yet`. A pergunta era se subir o merman ou mudar uma opção resolvia.
+
+`merman-ascii` e `merman-core` em `0.8.0-alpha.6` e em `0.10.0`; rustc 1.95.0, Linux x86_64,
+release. Cada linha abaixo veio de um crate de laboratório fora do repositório, que lê o
+diagrama de um arquivo e chama o renderer com a opção da linha. A `0.8.0` estável não foi medida.
+
+### A causa
+
+A mensagem vem de `graph/routing.rs` (`prepare_route_scene_with_execution`): para cada aresta o
+merman monta rotas candidatas (a `0.10.0` acrescenta portas cardeais alternativas numa grade
+grossa) e descarta as que cruzam geometria reservada: nós, bordas e títulos de grupo, células
+de terminal de outra aresta, rótulo sem lugar livre, marcador de seta sem berço. Se nenhuma
+candidata sobra, é `UnsupportedFeature`. Não é erro de sintaxe, de largura nem de opção.
+
+Cortando só **arestas** (estrutura e nós intactos), o diagrama de arquitetura do ILZA falha com
+**uma** aresta na alpha (`GUARDRAIL -->|"Validação"| OPENAI`) e com **duas** na `0.10.0`
+(`ENGINE --> SESSION` e `API -->|"Start Workflow"| TEMPORAL_SRV`). Cortando linhas, sobra uma
+reprodução de 25 linhas (subgraphs vazios e duas arestas para nós soltos), que virou o teste
+`GROUP_EDGES` do crate. Cada uma das 26 linhas de aresta do diagrama renderiza sozinha na
+`0.10.0`; na alpha, 5 reprovam sozinhas. Sozinha, a cadeia `A_PRES --> A_APP --> A_DOMAIN` do
+`graph LR` reprova na `0.10.0` e passa na alpha.
+
+### O que foi tentado no diagrama do bug
+
+| tentativa | arquitetura (`flowchart TB`) | módulos (`graph LR`) |
+|---|---|---|
+| alpha.6, perfil canônico | `routes crossing reserved graph geometry` | igual |
+| alpha.6, perfil compacto | igual | igual |
+| 0.10.0, canônico, compacto e `Auto` | igual | `unroutable graph edges` |
+| 0.10.0, teto de trabalho de 20 e de 200 milhões | igual | igual |
+| 0.10.0, `graph_padding_x/y` de 3 a 12 e de 2 a 8 | igual | igual |
+| 0.10.0, direção da raiz `LR`, `RL`, `BT` | igual | igual (`BT`: `reserved`) |
+| 0.10.0, sem as linhas `direction` internas | estoura o teto de 2 milhões (2 000 069); com 8 milhões, `reserved` | igual (2 000 020) |
+| 0.10.0, só subgraphs até 1 ou 2 níveis (aninhados achatados) | igual | igual |
+| alpha.6, **sem nenhum subgraph** | desenha, 363 x 117 | desenha, 95 x 167 |
+| 0.10.0, **sem nenhum subgraph** | desenha, 348 a 372 x 117 (precisa de 4 milhões) | desenha, 95 x 167 |
+
+Conclusão: **nenhuma versão nem opção renderiza o diagrama com os grupos**. O que renderiza é o
+mesmo grafo sem as bordas deles, e foi isso que o crate passou a fazer, avisando.
+
+### Os outros modos de falha, medidos no showcase de Mermaid
+
+Todos na `0.10.0`; a alpha tem os mesmos e mais alguns (`Cache~K, V~` na `classDiagram` não
+parseia).
+
+| modo | mensagem do merman | reprodução | o que o deckle faz |
+|---|---|---|---|
+| traços diferentes que se cruzam | `... `mixed-stroke route junctions` ...` | 4 arestas (`---`, `===>`, `o--o`, `x--x`), teste `MIXED_STROKES` | desenha todas como linha comum e avisa |
+| subgraphs com `direction` próprio e a grade grande demais | `ASCII resource limit `max_ascii_grid_cells` exceeded during `ascii_layout`: actual 688758, maximum 250000` | pipeline de CI/CD com 3 subgraphs aninhados | desenha sem as bordas e avisa |
+| flowchart denso demais | `... `unroutable graph edges` ...` ou `... `max_ascii_layout_work_units` exceeded ...: actual 4000031, maximum 4000000` | 8 camadas x 8 nós, 3 arestas por nó (teste `dense_flowchart`) | erro, nada a tirar |
+| aresta que pula uma camada de subgraphs | `routes crossing reserved graph geometry` | subgraphs empilhados (`S12 --> D6` por cima do grupo do meio, `GW --> O1`...), de 37 a 53 nós | desenha sem as bordas e avisa quando o teto não estoura antes |
+| `state`, composto com transição de volta | `... `routes crossing reserved graph geometry` for `state` yet` | `A { [*] --> B; B --> C; C --> B }` | erro (sem degrau) |
+| `state`, composto que sai para outro estado | igual | `A { [*] --> B; B --> [*] }; A --> D` | erro |
+| `state`, dois compostos, composto dentro de composto, composto sem `[*]`, concorrência `--` | igual | ver `docs/adr/0002` e o showcase | erro |
+| `state`, composto **simples** | desenha | `X --> A`, `A { [*] --> B --> C --> D --> [*] }`, `A --> [*]` | desenha |
+
+Um flowchart plano (sem subgraphs) de **54 nós e 72 arestas** em nove camadas (o do showcase)
+desenha em 117 x 89, em 22 ms, **com o teto padrão de 2 milhões**. Um de 56 nós e 77 arestas
+passa de 2 milhões e desenha com 4. O pior caso é o merman gastar o teto inteiro procurando uma
+rota que não existe: 26 ms com 2 milhões, 43 ms com 4, 72 ms com 8, 162 ms com 20 (release).
+Subir o teto não ajuda esses diagramas, só os que realmente precisam de mais trabalho.
+
+### Benchmark do flowchart grande (V5, `make bench`)
+
+Mesmo teste (`bench_flowchart`), mesma máquina, release, `cargo test --release`; 4 rodadas de
+cada lado, e a mediana de cada rodada (50 execuções do médio, 15 dos grandes). A máquina é
+barulhenta (o "grande e fundo" é bimodal), então o intervalo entre rodadas vale mais que um número:
+
+| caso | alpha.6 (`bcc99f8`) | 0.10.0 |
+|---|---|---|
+| médio, 6 arestas | 1,48 a 1,55 ms | 1,43 a 1,46 ms |
+| grande e fundo, 48 arestas, 405 linhas | 29 a 49 ms (menor mínimo: 28 ms) | 18 a 30 ms (menor mínimo: 17 ms) |
+| grande e largo, 48 arestas, 45 linhas | 16,5 a 24,9 ms (menor mínimo: 16 ms) | 15,7 a 19,6 ms (menor mínimo: 15 ms) |
+
+A `0.10.0` não piorou o benchmark. O render do `examples/mermaid.md` inteiro (24 blocos) está no
+teste do job `native`, com orçamento de 5 s e o cache acertando na segunda passada.
+
+### O degrau de simplificação, nos blocos que falhavam
+
+| bloco | como escrito | sem traço | sem subgraphs | os dois |
+|---|---|---|---|---|
+| 14 formas e 8 tipos de aresta | `mixed-stroke` | **desenha** | `mixed-stroke` | desenha |
+| CI/CD, subgraphs aninhados com `direction` | `max_ascii_grid_cells` | igual | **desenha** | desenha |
+| ILZA, arquitetura | `reserved` | igual | **desenha** (com 4 milhões) | desenha |
+| ILZA, módulos | `unroutable` | igual | **desenha** | desenha |
+| plataforma, 37 nós e 6 subgraphs empilhados, com arestas que pulam subgraph | `max_ascii_layout_work_units` (4 000 005) | igual | igual | igual: o bloco do showcase virou um flowchart plano de 54 nós |
+
+### Não foi medido
+
+A `0.8.0` estável; a legibilidade do diagrama do bug achatado (348 colunas) numa janela
+estreita; o preview numa UI de terminal de verdade; o degrau de simplificação para o `state`
+(o modelo é uma árvore de documentos, e achatar o composto mudaria o significado dos `[*]`).
+
+---
+
 ## V6 — O scanner de Markdown aborta o Neovim com aninhamento fundo
 
 **Por quê importa:** é o mesmo modo de falha de V2 (processo morto, trabalho não salvo

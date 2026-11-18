@@ -81,7 +81,8 @@ sem webview.
 
 No terminal há também cor: títulos, ênfases, código inline, links e a sintaxe dos blocos de
 código. O arquivo [`examples/showcase.md`](examples/showcase.md) exercita todo tipo de bloco e
-serve de teste manual.
+serve de teste manual; o [`examples/mermaid.md`](examples/mermaid.md) tem um diagrama grande de
+cada um dos 14 tipos de Mermaid que o texto cobre.
 
 ## Requisitos
 
@@ -310,6 +311,7 @@ degradação é por feature, não do plugin.
 - [Roadmap](docs/roadmap.md)
 - [Validação empírica](docs/validation.md): o que foi medido e o que ainda é suposição
 - [Exemplo para teste manual](examples/showcase.md)
+- [Exemplo de Mermaid, os 14 tipos](examples/mermaid.md)
 - Decisões (ADR):
   - [0001 — `mlua` em vez de `nvim-oxi`](docs/adr/0001-mlua-sobre-nvim-oxi.md)
   - [0002 — `merman-ascii` em vez de implementar Mermaid do zero](docs/adr/0002-merman-sobre-implementacao-propria.md)

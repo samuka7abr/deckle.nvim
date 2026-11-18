@@ -21,6 +21,15 @@
 --- reticências, e quem não desenha nada para um bloco sem linhas: um `mermaid` vazio some do
 --- preview, como qualquer cerca vazia. O motivo completo, sem corte, fica em `M.last_error`.
 ---
+--- # Layout simplificado
+---
+--- O layout de texto do merman não roteia todo flowchart (aresta que cruza a borda de um
+--- subgraph, traços diferentes que se cruzam). Nesses casos o crate desenha de novo sem o que não
+--- sabe rotear e devolve, junto das linhas, um aviso de uma linha (`deckle_native.render` devolve
+--- `lines, notice`). O desenho sai normalmente, e o aviso vai numa linha `DeckleCodeNote` logo
+--- abaixo dele, **sem** o prefixo `mermaid:` (que é só da degradação: nada foi desenhado). O aviso
+--- fica em `M.last_notice`.
+---
 --- # Linha mais larga que a janela
 ---
 --- O `width` do `ctx` vai ao crate como **meta**: o merman tenta o perfil compacto quando o
@@ -55,6 +64,11 @@ M.cache_limit = 64
 ---@type string|nil
 M.last_error = nil
 
+--- Aviso completo (sem corte) do último desenho que saiu com o layout simplificado, ou `nil`.
+--- Para teste e depuração.
+---@type string|nil
+M.last_notice = nil
+
 --- A moldura já tem `mermaid` no rótulo, então a nota é curta: quando o bloco é estreito ela
 --- perde o fim, não o começo.
 local NOTE_PREFIX = "mermaid: "
@@ -65,6 +79,7 @@ local NOTE_PREFIX = "mermaid: "
 
 ---@class deckle.MermaidCacheEntry
 ---@field lines string[]|nil  o desenho, quando o render deu certo
+---@field notice string|nil   o aviso de layout simplificado, quando o desenho o teve
 ---@field err string|nil      a mensagem do crate, quando deu erro
 ---@field tick integer        ordem de uso, para o LRU
 
@@ -134,30 +149,36 @@ local function copy(lines)
   return vim.list_slice(lines, 1, #lines)
 end
 
---- Chama o crate. Devolve as linhas, ou `nil` e a mensagem do erro.
+--- Chama o crate. Devolve as linhas (e o aviso de layout simplificado, se houve), ou `nil` e a
+--- mensagem do erro.
 ---@param mod deckle.NativeModule
 ---@param src string
 ---@param opts table
 ---@return string[]|nil lines
 ---@return string|nil err
+---@return string|nil notice
 local function call_native(mod, src, opts)
-  local ok, result = pcall(mod.render, src, opts)
+  local ok, result, notice = pcall(mod.render, src, opts)
   if not ok then
     return nil, vim.trim((tostring(result):gsub("%s+", " ")))
   end
   if type(result) ~= "table" or type(result[1]) ~= "string" then
     return nil, "the native renderer returned no lines"
   end
-  return result
+  if type(notice) ~= "string" or notice == "" then
+    notice = nil
+  end
+  return result, nil, notice
 end
 
---- Desenha o bloco: linhas de arte, ou `nil` e o motivo (curto para a nota, completo para
---- `last_error`).
+--- Desenha o bloco: linhas de arte (e o aviso de layout simplificado), ou `nil` e o motivo
+--- (curto para a nota, completo para `last_error`).
 ---@param block deckle.Block
 ---@param ctx deckle.RenderCtx
 ---@return string[]|nil lines
 ---@return string|nil short
 ---@return string|nil detail
+---@return string|nil notice
 local function draw(block, ctx)
   local mod = native.get()
   if not mod then
@@ -187,21 +208,21 @@ local function draw(block, ctx)
     if entry then
       hits = hits + 1
       if entry.lines then
-        return copy(entry.lines)
+        return copy(entry.lines), nil, nil, entry.notice
       end
       return nil, entry.err
     end
     misses = misses + 1
   end
 
-  local lines, err = call_native(mod, src, opts)
+  local lines, err, notice = call_native(mod, src, opts)
   if key then
-    remember(key, { lines = lines, err = err })
+    remember(key, { lines = lines, err = err, notice = notice })
   end
   if not lines then
     return nil, err
   end
-  return copy(lines)
+  return copy(lines), nil, nil, notice
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -243,9 +264,9 @@ end
 ---@param ctx deckle.RenderCtx
 ---@return string[] lines, deckle.Mark[] marks
 function M.render(block, ctx)
-  local ok, lines, short, detail = pcall(draw, block, ctx)
+  local ok, lines, short, detail, notice = pcall(draw, block, ctx)
   if not ok then
-    lines, short, detail = nil, "internal error", tostring(lines)
+    lines, short, detail, notice = nil, "internal error", tostring(lines), nil
   end
 
   if lines then
@@ -254,6 +275,13 @@ function M.render(block, ctx)
       if line:find("%S") then
         marks[#marks + 1] = { row = row - 1, col = 0, end_col = #line, hl = "DeckleMermaid" }
       end
+    end
+    M.last_notice = notice
+    if notice then
+      -- O aviso vai abaixo do desenho, como a nota da degradação vai abaixo da moldura.
+      local line = require("deckle.render.code").note_line(notice, ctx)
+      lines[#lines + 1] = line
+      marks[#marks + 1] = { row = #lines - 1, col = 0, end_col = #line, hl = "DeckleCodeNote" }
     end
     return lines, marks
   end

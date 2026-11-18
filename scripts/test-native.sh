@@ -6,7 +6,9 @@
 #   2. tests/native/test_mermaid_native.lua (mini.test): o mermaid no preview com o `.so` de
 #      verdade, o gate de saida da fase 7;
 #   3. tests/native/test_docs_native.lua (mini.test): o showcase com o mermaid desenhado e a
-#      captura do README, que e a saida real do render (fase 10).
+#      captura do README, que e a saida real do render (fase 10);
+#   4. tests/native/test_mermaid_showcase_native.lua (mini.test): examples/mermaid.md, os 14
+#      tipos, sem bloco degradado (so o `pie`), no orcamento de tempo e com o cache acertando.
 #
 # Uso:
 #   scripts/test-native.sh
@@ -54,4 +56,8 @@ DECKLE_REQUIRE_NATIVE=1 ./scripts/test.sh tests/native/test_mermaid_native.lua
 
 # A documentacao e o exemplo com o `.so`: a captura do README nao pode envelhecer.
 DECKLE_REQUIRE_NATIVE=1 ./scripts/test.sh tests/native/test_docs_native.lua
+
+# O showcase de Mermaid (examples/mermaid.md): nenhum bloco degrada, salvo o `pie`, e o arquivo
+# cabe no orcamento de tempo, com o cache acertando na segunda passada.
+DECKLE_REQUIRE_NATIVE=1 ./scripts/test.sh tests/native/test_mermaid_showcase_native.lua
 echo "test-native: ok"

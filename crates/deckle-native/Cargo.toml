@@ -12,9 +12,31 @@ name = "deckle_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Versao EXATA e IDENTICA nos dois crates. Alpha que quebra API entre versoes, e `cargo add`
-# ja resolveu versoes diferentes para os dois (V5). Ao subir, mude os dois, o ADR-0002, o
-# CLAUDE.md e `MERMAN_VERSION` em scripts/check-merman-version.sh.
-merman-core = "=0.8.0-alpha.6"
-merman-ascii = "=0.8.0-alpha.6"
+# Versao EXATA e IDENTICA nos tres crates do merman (core, ascii e model: a partir da 0.10 o
+# `OperationControl` mora no model e nao e reexportado). O merman quebra API entre versoes, e
+# `cargo add` ja resolveu versoes diferentes para os dois (V5). Ao subir, mude os tres, o
+# ADR-0002, o CLAUDE.md e `PINNED` em scripts/check-merman-version.sh.
+#
+# A partir da 0.10 nenhuma familia vem por padrao. O `merman-core` entra com `all-diagrams`, para
+# todo tipo do Mermaid parsear e um `pie` cair em "unsupported diagram" (e nao em erro de
+# sintaxe). O renderer de texto so recebe as 14 familias abaixo: `diagram-swimlane` fica de
+# fora de proposito, e `supported_types()` continua com 14 tipos (ADR-0002).
+merman-core = { version = "=0.10.0", default-features = false, features = ["all-diagrams"] }
+merman-ascii = { version = "=0.10.0", default-features = false, features = [
+    "diagram-class",
+    "diagram-er",
+    "diagram-flowchart",
+    "diagram-gantt",
+    "diagram-git-graph",
+    "diagram-journey",
+    "diagram-kanban",
+    "diagram-mindmap",
+    "diagram-packet",
+    "diagram-sequence",
+    "diagram-state",
+    "diagram-timeline",
+    "diagram-tree-view",
+    "diagram-xychart",
+] }
+merman-model = { version = "=0.10.0", default-features = false }
 mlua = { version = "0.11", features = ["module", "luajit"] }

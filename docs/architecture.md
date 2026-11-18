@@ -91,7 +91,7 @@ Uma chamada por diagrama. Sem conversas de ida e volta.
 -- Lua
 local native = require("deckle_native")   -- lua/deckle_native.so, via `make native`
 
-local ok, lines = pcall(native.render, src, {
+local ok, lines, notice = pcall(native.render, src, {
   width         = 80,          -- meta de largura em células (default 80), não é corte
   charset       = "unicode",   -- "unicode" (default) | "ascii"
   diagram_ty    = "flowchart", -- opcional: id de tipo do Mermaid já conhecido; pula a detecção
@@ -99,6 +99,8 @@ local ok, lines = pcall(native.render, src, {
 })
 -- ok == false → `lines` é uma string de uma linha com o motivo; o bloco degrada para código cru
 -- ok == true  → `lines` é string[] (sem "\n"), pronta para nvim_buf_set_lines
+--               `notice` é nil, ou uma string de uma linha quando o layout teve que ser
+--               simplificado para desenhar (ver "Layout simplificado" abaixo)
 
 native.supported_types()  -- string[]: os 14 tipos do renderer de texto, lidos do merman
 native.version()          -- string: versão do crate deckle-native
@@ -107,7 +109,10 @@ native.version()          -- string: versão do crate deckle-native
 ```rust
 // Rust — a lógica pura não conhece Lua (crates/deckle-native/src/render.rs)
 pub fn render(src: &str, opts: &RenderOptions) -> Result<Vec<String>, RenderError>;
+pub fn render_with_notice(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError>;
 pub fn supported_types() -> Vec<String>;
+
+pub struct Rendered { pub lines: Vec<String>, pub notice: Option<String> }
 
 // a camada mlua é fina (src/binding.rs)
 #[mlua::lua_module]
@@ -120,7 +125,8 @@ erro de Lua capturável (validado), mas `Err` produz mensagem útil e `panic!` n
 
 O valor que o `pcall` devolve em caso de erro é uma **string** pura (`error(msg, 0)`): se o
 `Err` fosse entregue direto pelo mlua, o Lua receberia um userdata cujo `tostring` traz um
-`stack traceback`. Por isso a função nativa devolve `(nil, msg)` e um wrapper Lua faz o `error`.
+`stack traceback`. Por isso a função nativa devolve `(lines, nil, notice)` ou `(nil, msg, nil)` e
+um wrapper Lua faz o `error` e devolve `lines, notice`.
 
 Erros que o módulo produz, todos em inglês e em uma linha:
 
@@ -138,6 +144,18 @@ Erros que o módulo produz, todos em inglês e em uma linha:
 passa dela, o crate tenta o perfil compacto (só flowchart e sequence o aceitam) e devolve o
 mais estreito. Se ainda assim sobrar linha larga, ela vem inteira, e decidir o que fazer
 com ela é da camada Lua.
+
+**Layout simplificado.** O layout de texto do merman não roteia todo flowchart: aresta que cruza
+a borda de um subgraph (`routes crossing reserved graph geometry`, `unroutable graph edges`) e
+arestas de traços diferentes que se cruzam (`mixed-stroke route junctions`) devolvem erro, e os
+limites de recurso dele cortam a busca de rota. Em vez de devolver o erro, o crate tenta de novo o
+flowchart, nesta ordem, **tirando só o que o layout não sabe rotear**: o traço das arestas (todas
+viram linha comum), as bordas dos subgraphs (os nós e as arestas ficam, e o nó que um subgraph
+era como ponta de aresta ganha o título dele) e os dois. O primeiro que desenha vence e o
+`notice` diz o que foi tirado; a camada Lua o põe numa linha `DeckleCodeNote` sob o desenho
+(sem o prefixo `mermaid:`, que é só da degradação). Se nenhum desenha, o erro devolvido é o do
+diagrama como o autor o escreveu. Só o flowchart tem esse degrau: o `state` com estado composto
+que o merman não roteia continua erro (V5, "Limitações conhecidas" no `doc/deckle.txt`).
 
 ## 6. Camadas de degradação
 
@@ -237,7 +255,8 @@ Como ficou na fase 8:
 
 | Risco | Gravidade | Mitigação |
 |---|---|---|
-| `merman` está em alpha e quebra API entre versões | alta | versão **pinada exata** (`=0.8.0-alpha.6`); binário pré-compilado isola o usuário |
+| `merman` quebra API entre versões (era alpha até a 0.8) | alta | versão **pinada exata** (`=0.10.0`, nos três crates); binário pré-compilado isola o usuário |
+| O layout de texto do merman não roteia todo flowchart nem todo `state` | média | degrau de simplificação no crate (V5); o que sobra vira nota, e está em "Limitações conhecidas" |
 | MSRV do merman é 1.95 (bem recente) | média | CI controla a toolchain; só afeta quem compila local |
 | Bug de render no nó losango `{...}` | baixa | cosmético, reportar upstream |
 | Diagrama grande custa ~46ms | média | debounce + cache por hash do bloco; render assíncrono |

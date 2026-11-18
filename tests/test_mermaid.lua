@@ -678,6 +678,100 @@ T["nota"]["o render de código lançando erro cai no aviso do dispatcher, só pa
 end
 
 -- ---------------------------------------------------------------------------------------
+-- Layout simplificado: o crate desenha e avisa (`lines, notice`)
+-- ---------------------------------------------------------------------------------------
+
+T["layout simplificado"] = unit_set()
+
+local SIMPLIFIED =
+  "layout simplified: subgraph boxes removed, the text layout cannot route edges across them"
+
+T["layout simplificado"]["o desenho sai, com o aviso sob ele e sem o prefixo mermaid:"] = function()
+  fake.responder = function()
+    return { "┌─┐", "│ x │", "└─┘" }, SIMPLIFIED
+  end
+  local result = r("antes\n\n" .. FENCE .. "\n\ndepois", { width = 100 })
+  eq(result.lines, { "antes", "", "┌─┐", "│ x │", "└─┘", SIMPLIFIED, "", "depois" })
+  -- O desenho tem a cor dele, e o aviso a da nota. Não é degradação: nenhum bloco de código.
+  eq(marks_of(result, "DeckleMermaid"), 3)
+  local notes = {}
+  for _, mark in ipairs(result.marks) do
+    if mark.hl == "DeckleCodeNote" then
+      notes[#notes + 1] = mark
+    end
+  end
+  eq(notes, { { row = 5, col = 0, end_col = #SIMPLIFIED, hl = "DeckleCodeNote" } })
+  eq(count_in(result.lines, "mermaid: "), 0)
+  eq(count_in(result.lines, "╭"), 0)
+  eq(mermaid.last_notice, SIMPLIFIED)
+  eq(mermaid.last_error, nil)
+end
+
+T["layout simplificado"]["o mapa de sync cobre o desenho e o aviso"] = function()
+  fake.responder = function()
+    return { "┌─┐", "│ x │", "└─┘" }, SIMPLIFIED
+  end
+  local result = r(FENCE, { width = 100 })
+  eq(result.map, { { preview_start = 0, preview_end = 4, src_start = 0, src_end = 4 } })
+end
+
+T["layout simplificado"]["o aviso é cortado na largura: reticências em Unicode, três pontos em ASCII"] = function()
+  fake.responder = function()
+    return { "┌─┐", "│ x │", "└─┘" }, SIMPLIFIED
+  end
+  local unicode = r(FENCE, { width = 40 }).lines
+  eq(vim.fn.strdisplaywidth(unicode[#unicode]) <= 40, true)
+  eq(unicode[#unicode]:sub(-3), "…")
+  eq(vim.startswith(unicode[#unicode], "layout simplified: subgraph"), true)
+  -- O completo não se perde: fica em `last_notice`.
+  eq(mermaid.last_notice, SIMPLIFIED)
+
+  mermaid.cache_clear()
+  local ascii = r(FENCE, { width = 40, charset = "ascii" }).lines
+  eq(vim.fn.strdisplaywidth(ascii[#ascii]) <= 40, true)
+  eq(ascii[#ascii]:sub(-3), "...")
+  eq(ascii[#ascii]:find("[\128-\255]"), nil)
+end
+
+T["layout simplificado"]["o cache guarda o aviso: o segundo render não volta ao crate"] = function()
+  fake.responder = function()
+    return { "┌─┐", "│ x │", "└─┘" }, SIMPLIFIED
+  end
+  local first = r(FENCE, { width = 100 })
+  mermaid.last_notice = nil
+  local second = r(FENCE, { width = 100 })
+  eq(#calls, 1)
+  eq(second.lines, first.lines)
+  eq(second.marks, first.marks)
+  eq(mermaid.last_notice, SIMPLIFIED)
+  eq(mermaid.cache_stats().hits, 1)
+end
+
+T["layout simplificado"]["desenho sem aviso não ganha linha nenhuma e zera o último aviso"] = function()
+  fake.responder = function(src)
+    if src:find("SIMPLE", 1, true) then
+      return { "┌─┐", "│ x │", "└─┘" }, SIMPLIFIED
+    end
+    return { "┌─┐", "│ y │", "└─┘" }
+  end
+  r("```mermaid\nSIMPLE\n```", { width = 100 })
+  eq(mermaid.last_notice, SIMPLIFIED)
+  local plain = r("```mermaid\nplain\n```", { width = 100 })
+  eq(plain.lines, { "┌─┐", "│ y │", "└─┘" })
+  eq(mermaid.last_notice, nil)
+end
+
+T["layout simplificado"]["aviso que não é texto (ou é vazio) é ignorado, o desenho sai igual"] = function()
+  for _, notice in ipairs({ 42, "", true }) do
+    mermaid.cache_clear()
+    fake.responder = function()
+      return { "┌─┐", "│ x │", "└─┘" }, notice
+    end
+    eq(r(FENCE, { width = 100 }).lines, { "┌─┐", "│ x │", "└─┘" })
+  end
+end
+
+-- ---------------------------------------------------------------------------------------
 -- Integração: o preview inteiro, num Neovim filho (gates 2, 3 e 4)
 -- ---------------------------------------------------------------------------------------
 
