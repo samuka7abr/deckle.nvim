@@ -9,9 +9,9 @@
 ---
 --- * `open`: cria o buffer na primeira vez e o reaproveita nas seguintes, abre a janela,
 ---   registra os autocmds vivos (e liga `deckle.sync`, que tem os dele) e renderiza.
---- * `close`: fecha a janela e remove os autocmds vivos, os de `deckle.sync` inclusive. O buffer
----   fica, escondido, para a próxima abertura. Sobra só o autocmd que descarta o estado
----   (abaixo).
+--- * `close`: fecha a janela e remove os autocmds vivos, os de `deckle.sync` inclusive, e apaga as
+---   imagens que o preview transmitiu ao terminal (`deckle.image`, fase 9). O buffer fica,
+---   escondido, para a próxima abertura. Sobra só o autocmd que descarta o estado (abaixo).
 --- * Fonte ou preview apagado (`BufDelete`, `BufWipeout`): descarta tudo, inclusive o buffer
 ---   de preview. Sem isso o preview escondido vazaria junto com cada fonte fechado.
 ---
@@ -145,12 +145,18 @@ local function render(st)
   local width = render_width(st)
   local ok, err = pcall(function()
     local ir = require("deckle.parse").parse(st.src)
+    -- `nil` sem protocolo gráfico: o render sai idêntico ao da camada 0 (fase 9).
+    local images = require("deckle.image").session(st.src)
     local result = require("deckle.render").render(ir, {
       width = width,
       charset = config().charset,
+      images = images,
     })
     write(st, result)
     st.map = result.map
+    if images then
+      images.commit()
+    end
   end)
   if not ok then
     notify("render failed: " .. tostring(err), vim.log.levels.WARN)
@@ -189,6 +195,8 @@ end
 local function detach(st)
   stop_timer(st)
   require("deckle.sync").detach(st.src)
+  -- Sem janela, as imagens do preview saem do terminal (fase 9).
+  require("deckle.image").clear(st.src)
   if st.live then
     pcall(vim.api.nvim_del_augroup_by_id, st.live)
     st.live = nil
@@ -447,6 +455,8 @@ function M.refresh(bufnr)
     return
   end
   stop_timer(st)
+  -- Retransmite as imagens: o terminal pode tê-las perdido (um reset).
+  require("deckle.image").reset(st.src)
   render(st)
 end
 
