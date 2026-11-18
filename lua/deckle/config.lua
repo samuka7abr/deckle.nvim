@@ -19,14 +19,18 @@ local defaults = {
   debounce_ms = 120,
   native = { enabled = true, path = nil },
   mermaid = { max_src_lines = 200 },
+  -- Camada 2 (fase 9): `enabled` é "auto" (detecta o terminal), `true` (aceita o risco de SSH e
+  -- tmux sem confirmação) ou `false`. `max_height` é o teto, em linhas, de uma imagem.
+  images = { enabled = "auto", max_height = 20 },
 }
 
 --- Chaves aceitas em cada nível. Serve para pegar typo em opção, que de outro modo é
 --- silenciosamente ignorado e vira bug reportado como "não funciona".
 local known_keys = {
-  [""] = { "split", "width", "charset", "sync", "debounce_ms", "native", "mermaid" },
+  [""] = { "split", "width", "charset", "sync", "debounce_ms", "native", "mermaid", "images" },
   native = { "enabled", "path" },
   mermaid = { "max_src_lines" },
+  images = { "enabled", "max_height" },
 }
 
 --- Configuração efetiva. Antes de `setup()`, é uma cópia dos defaults.
@@ -136,6 +140,18 @@ function M.validate(opts)
     false,
     "a positive integer"
   )
+
+  vim.validate("images", opts.images, "table")
+  vim.validate("images.enabled", opts.images.enabled, function(value)
+    return value == "auto" or value == true or value == false
+  end, 'one of "auto", true or false')
+  vim.validate(
+    "images.max_height",
+    opts.images.max_height,
+    positive_int,
+    false,
+    "a positive integer"
+  )
 end
 
 --- Mescla `opts` nos defaults, valida e guarda o resultado em `M.options`.
@@ -156,6 +172,9 @@ function M.setup(opts)
   end
   if type(opts.mermaid) == "table" then
     reject_unknown(opts.mermaid, "mermaid")
+  end
+  if type(opts.images) == "table" then
+    reject_unknown(opts.images, "images")
   end
 
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts)
