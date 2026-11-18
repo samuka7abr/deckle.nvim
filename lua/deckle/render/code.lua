@@ -62,7 +62,6 @@ local M = {}
 
 --- Largura de um tab, em células. Fixa: o render não depende do `tabstop` de ninguém.
 M.TABSTOP = 4
-
 --- Acima de qualquer um dos dois o bloco sai sem cor: um parse sem teto trava o re-render.
 M.MAX_HIGHLIGHT_LINES = 5000
 M.MAX_HIGHLIGHT_BYTES = 512 * 1024
@@ -182,6 +181,19 @@ local function truncate(s, max, ellipsis)
     used = used + cells
   end
   return table.concat(out) .. keep
+end
+
+--- A nota (`DeckleCodeNote`) como uma linha só, cortada em `ctx.width`: a mesma conta que
+--- `render` faz sob a moldura. `render/mermaid.lua` a usa no aviso de layout simplificado, que
+--- vai sob um desenho e não sob um bloco de código.
+---@param note string
+---@param ctx deckle.RenderCtx|nil
+---@return string
+function M.note_line(note, ctx)
+  ctx = ctx or {}
+  local g = GLYPHS[ctx.charset] or GLYPHS.ascii
+  local width = math.max(ctx.width or 80, util.MIN_WIDTH)
+  return truncate(vim.trim(flatten(note)), width, g.ellipsis)
 end
 
 --- Troca os tabs de `line` por espaços, até o próximo múltiplo de `TABSTOP` (em células, não
