@@ -239,6 +239,79 @@ T["estilo e cor (classDef, style, linkStyle, rect rgb, box) não degradam nada"]
   end
 )
 
+--- Se o `deckle.render.ansi` (o parser de SGR) existe nesta árvore. Sem ele os escapes saem por um
+--- `gsub` e não há marcas de cor; com ele há, e os testes de cor conferem as duas situações.
+local has_ansi = vim.uv.fs_stat(H.repo_root .. "/lua/deckle/render/ansi.lua") ~= nil
+
+---@param marks { hl: string }[]
+---@return integer quantas marcas são de cor de diagrama (qualquer `DeckleMermaid*` que não a base)
+local function count_color_marks(marks)
+  local n = 0
+  for _, mark in ipairs(marks) do
+    if mark.hl:find("^DeckleMermaid") and mark.hl ~= "DeckleMermaid" then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+T["cor: o arquivo inteiro não deixa escape, e os blocos com estilo ganham marcas de cor"] = native_case(
+  function()
+    local r = child.lua_get("_G.timed_render(...)", { 100, "unicode" })
+    for _, line in ipairs(r.lines) do
+      eq(line:find("\27", 1, true), nil)
+    end
+    -- O showcase tem `classDef`, `style`, `linkStyle`, `box rgb` e `rect rgb` em vários
+    -- diagramas. Com o `ansi.lua` viram marcas; sem ele (a branch dele é outra) nenhuma, e o
+    -- desenho sai inteiro, sem escape, do mesmo jeito.
+    if has_ansi then
+      eq(count_color_marks(r.marks) > 20, true)
+    else
+      eq(count_color_marks(r.marks), 0)
+    end
+    -- O texto sem cor própria segue em `DeckleMermaid`.
+    local base = 0
+    for _, mark in ipairs(r.marks) do
+      if mark.hl == "DeckleMermaid" then
+        base = base + 1
+      end
+    end
+    eq(base > 500, true)
+  end
+)
+
+T["cor: com mermaid.colors = false o desenho é o mesmo, sem nenhuma marca de cor"] = native_case(
+  function()
+    local colored = child.lua_get("_G.timed_render(...)", { 100, "unicode" })
+    child.lua([[require("deckle").setup({ mermaid = { colors = false } })]])
+    local plain = child.lua_get("_G.timed_render(...)", { 100, "unicode" })
+    -- A cor não muda uma célula do layout: o texto é idêntico, linha por linha. O espaço do fim é
+    -- a única diferença: o merman completa as linhas do class e do ER até um retângulo só no
+    -- modo colorido (invisível), e o que se compara é o que aparece.
+    local function trimmed(lines)
+      return vim.tbl_map(function(line)
+        return (line:gsub("%s+$", ""))
+      end, lines)
+    end
+    eq(trimmed(plain.lines), trimmed(colored.lines))
+    eq(count_color_marks(plain.marks), 0)
+    for _, line in ipairs(plain.lines) do
+      eq(line:find("\27", 1, true), nil)
+    end
+    -- Desligar a cor é outra chave de cache: o arquivo todo foi ao crate de novo.
+    local stats = child.lua_get("_G.stats()")
+    eq(stats.misses, 2 * #first_lines())
+  end
+)
+
+T["cor: charset ascii nunca tem cor, mesmo com colors ligado"] = native_case(function()
+  local r = child.lua_get("_G.timed_render(...)", { 100, "ascii" })
+  eq(count_color_marks(r.marks), 0)
+  for _, line in ipairs(r.lines) do
+    eq(line:find("\27", 1, true), nil)
+  end
+end)
+
 T["o arquivo inteiro cabe no orçamento de tempo, e a segunda passada vem do cache"] = native_case(
   function()
     local cold = child.lua_get("_G.timed_render(...)", { 100, "unicode" })

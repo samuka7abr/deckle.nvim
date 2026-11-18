@@ -276,7 +276,7 @@ Valores de fábrica:
       sync = "cursor",
       debounce_ms = 120,
       native = { enabled = true, path = nil },
-      mermaid = { max_src_lines = 200 },
+      mermaid = { max_src_lines = 200, colors = true },
       images = { enabled = "auto", max_height = 20 },
     })
 <
@@ -334,6 +334,18 @@ mermaid.max_src_lines                    *deckle-config-mermaid.max_src_lines*
     Um bloco `mermaid` com mais linhas que isso é recusado pelo módulo antes
     do layout, que é o que custa caro (dezenas de milissegundos num diagrama
     grande): vira código, com uma nota.
+
+mermaid.colors                                  *deckle-config-mermaid.colors*
+    Tipo: booleano. Padrão: `true`.
+    Liga a cor dos diagramas: o módulo nativo desenha em TrueColor e o que
+    o diagrama pede (`classDef`, `style`, `linkStyle`, `box rgb(...)` e
+    `rect rgb(...)`) aparece em cor no preview. As cores são RGB e precisam
+    de |'termguicolors'|. O texto e as bordas sem cor própria continuam no
+    grupo |hl-DeckleMermaid|, que segue o seu esquema de cores: a cor de
+    tema do merman, feita para fundo claro, nunca chega ao preview.
+    Com `false`, ou com |deckle-config-charset| em `"ascii"`, o desenho é o
+    de sempre, em texto puro. Mudar a opção vale no próximo render, porque
+    o cache guarda o desenho colorido e o puro em entradas separadas.
 
 images                                                  *deckle-config-images*
     Tabela com as opções da camada 2, abaixo (|deckle-images|).
@@ -429,8 +441,19 @@ simplified: ...`). Esse aviso não tem o prefixo `mermaid:`, que é só da
 degradação: o diagrama foi desenhado. Se nenhum desenha, vale a nota de erro
 do diagrama como o autor o escreveu. Veja |deckle-limitations|.
 
-Cada desenho fica guardado, por conteúdo, largura, charset e limite de
-linhas, em até 64 entradas, junto do aviso de layout simplificado.
+                                                       *deckle-mermaid-colors*
+Com |deckle-config-mermaid.colors| ligado e `charset = "unicode"`, o que o
+diagrama estiliza aparece em cor: `classDef`, `style`, `linkStyle`,
+`box rgb(...)` e `rect rgb(...)`. O que não tem cor própria continua em
+|hl-DeckleMermaid|. A cor não muda o layout: o texto é o mesmo, célula por
+célula, do desenho sem cor.
+
+Entidades HTML (`&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#39;`) que o merman deixa
+literais nos rótulos de flowchart e state são decodificadas no desenho pronto,
+e a caixa continua alinhada.
+
+Cada desenho fica guardado, por conteúdo, largura, charset, limite de
+linhas e cor, em até 64 entradas, junto do aviso de layout simplificado.
 Re-renderizar o mesmo diagrama não volta a chamar o módulo.
 
 O arquivo `examples/mermaid.md`, do repositório, tem um diagrama grande de
@@ -762,6 +785,15 @@ Mermaid
     sem `[*]` e concorrência com `--` degradam. Não há degrau de
     simplificação para o `state`: estados simples, `<<choice>>`, `<<fork>>`,
     `<<join>>`, notas e `classDef` desenham.
+- O merman escreve a mais, no desenho, o texto original de certos rótulos, e o
+  plugin não filtra (não há opção, e uma regex pegaria rótulo legítimo):
+  ER com atributo (`type(bytes=3)="int" name(bytes=2)="id" ...`), class com
+  genéricos (`Box~T~`: `text(bytes=12)="Box<T>"`) e xychart com título ou
+  mais de uma série (`titleDisplay: chart(bytes=6)="Vendas"`).
+- Entidades: `&#39;` sai `&'` (o merman consome o `#39;`; escreva `#39;`), e
+  `&amp;lt;` sai `<`.
+- O desenho colorido (|deckle-config-mermaid.colors|) foi conferido só em
+  Neovim headless, nunca num terminal de verdade.
 - O diagrama de 200 linhas (o limite) no re-render de um documento grande não
   foi medido.
 - O binário só é carregado uma vez por sessão: reinicie o Neovim depois de

@@ -4,4 +4,4 @@
 ---
 --- Constante em Lua, e não um arquivo `VERSION`, porque o plugin pode estar em qualquer lugar
 --- do `runtimepath` e um `require` acha este módulo sem adivinhar caminho.
-return "0.3.0"
+return "0.4.0"
