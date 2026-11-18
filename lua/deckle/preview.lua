@@ -8,9 +8,10 @@
 --- # Ciclo de vida
 ---
 --- * `open`: cria o buffer na primeira vez e o reaproveita nas seguintes, abre a janela,
----   registra os autocmds vivos e renderiza.
---- * `close`: fecha a janela e remove os autocmds vivos. O buffer fica, escondido, para a
----   próxima abertura. Sobra só o autocmd que descarta o estado (abaixo).
+---   registra os autocmds vivos (e liga `deckle.sync`, que tem os dele) e renderiza.
+--- * `close`: fecha a janela e remove os autocmds vivos, os de `deckle.sync` inclusive. O buffer
+---   fica, escondido, para a próxima abertura. Sobra só o autocmd que descarta o estado
+---   (abaixo).
 --- * Fonte ou preview apagado (`BufDelete`, `BufWipeout`): descarta tudo, inclusive o buffer
 ---   de preview. Sem isso o preview escondido vazaria junto com cada fonte fechado.
 ---
@@ -187,6 +188,7 @@ end
 ---@param st deckle.PreviewState
 local function detach(st)
   stop_timer(st)
+  require("deckle.sync").detach(st.src)
   if st.live then
     pcall(vim.api.nvim_del_augroup_by_id, st.live)
     st.live = nil
@@ -233,6 +235,9 @@ local function attach(st)
       end
     end,
   })
+
+  -- Sincronia de scroll (fase 3): sem autocmd nenhum com `sync = "off"`.
+  require("deckle.sync").attach(st.src)
 end
 
 --- Descarta o estado de um preview: autocmds, timer, janela e buffer. Idempotente, porque o

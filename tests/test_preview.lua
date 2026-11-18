@@ -597,6 +597,8 @@ T["re-render"]["config.width vence a janela e ajusta o vsplit"] = function()
 end
 
 T["re-render"]["a posição de leitura sobrevive ao render"] = function()
+  -- Sem a sincronia (fase 3): com ela, o render realinha o preview ao cursor do fonte.
+  child.lua([[require("deckle").setup({ sync = "off" })]])
   local lines = {}
   for i = 1, 120 do
     lines[#lines + 1] = "parágrafo " .. i
