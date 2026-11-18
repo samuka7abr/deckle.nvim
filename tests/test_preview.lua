@@ -149,8 +149,19 @@ T["abrir"]["`:Deckle open` no README.md do projeto renderiza sem erro"] = functi
   local lines = preview_lines(s)
   eq(#lines > 20, true)
   eq(lines[1], "deckle.nvim")
-  local text = table.concat(lines, "\n")
-  eq(text:find("somente-leitura", 1, true) ~= nil, true)
+  eq(table.concat(lines, "\n"):find("somente-leitura", 1, true) ~= nil, true)
+
+  -- A marcação sumiu do texto. O README mostra Markdown de exemplo dentro de uma cerca, que
+  -- aparece cru de propósito, então só vale o que vem antes da primeira moldura de código.
+  local prose = {}
+  for _, line in ipairs(lines) do
+    if line:find("^╭") or line:find("^%+%-") then
+      break
+    end
+    prose[#prose + 1] = line
+  end
+  local text = table.concat(prose, "\n")
+  eq(#prose > 5, true)
   eq(text:find("# deckle.nvim", 1, true), nil)
   eq(text:find("**", 1, true), nil)
 
