@@ -1,0 +1,78 @@
+sequenceDiagram
+    autonumber
+    actor U as 👤 Usuário
+    box rgb(230, 240, 255) Cliente
+        participant N as Neovim
+        participant L as deckle (Lua)
+    end
+    box Aqua Nativo
+        participant R as deckle_native
+        participant M as merman
+    end
+    participant FS as Sistema de arquivos
+
+    U->>N: :Deckle open
+    activate N
+    N->>L: preview.open()
+    activate L
+    L->>FS: lê o buffer
+    FS-->>L: linhas
+    L->>L: parse (treesitter)
+
+    rect rgb(230, 255, 230)
+        Note over L,R: Cada bloco mermaid
+        loop Para cada bloco
+            L->>+R: render(src, opts)
+            R->>+M: parse + layout
+            M-->>-R: linhas
+            alt render deu certo
+                R-->>L: linhas
+            else erro de sintaxe
+                R--)L: erro legível
+                Note right of L: vira código com nota
+            else tipo não coberto
+                R-x L: unsupported
+            end
+            deactivate R
+        end
+    end
+
+    rect rgb(245, 230, 255)
+        par desenha o preview
+            L->>N: escreve o buffer
+        and guarda o cache
+            L->>L: SHA-256 do bloco
+        and move o cursor
+            L-)N: sync de cursor
+        end
+    end
+
+    opt o usuário edita
+        U->>N: digita
+        N-)L: TextChanged
+        Note left of N: debounce de 150 ms
+    end
+
+    critical lê a configuração
+        L->>FS: lê o arquivo de config
+        FS-->>L: ok
+    option arquivo ausente
+        L->>L: usa os valores de fábrica
+    end
+
+    break o módulo nativo não carregou
+        L->>N: camada 0
+    end
+
+    create participant C as Cache
+    L->>C: guarda as linhas
+    L->>C: consulta
+    C-->>L: acerto
+    destroy C
+    L-xC: descarta
+
+    Note over U,N: Fim do ciclo
+    L-->>N: pronto
+    deactivate L
+    N-->>U: preview na tela
+    deactivate N
