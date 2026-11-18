@@ -397,6 +397,72 @@ a injeção do treesitter não acontece sozinha.
 
 **Tag `v0.1.0` sai daqui.** Preview de Markdown completo, zero dependência, camada 0.
 
+**Entregue.** O contrato de `render/code.lua` (largura, highlight, API para quem o chama) está
+em LuaCATS no topo do módulo. O nome e a assinatura `render(block, ctx) -> lines, marks` não
+mudaram. O que difere do esboço acima ou vai além:
+
+- **Moldura** em caixa fechada, com cantos arredondados (`╭╮╰╯`, `│`, `─`; `+`, `|`, `-` em
+  ASCII) e o info string como rótulo na borda de cima (`╭─ lua ─────╮`). Sem info string, sem
+  rótulo. Corpo com um espaço de folga de cada lado e o fundo `DeckleCode`.
+- **Largura.** Código não quebra. A caixa tem `ctx.width` células e cresce até o código mais
+  largo caber (já com tab expandido): todas as linhas têm a mesma largura, e a borda direita
+  fica no fim do código em vez de cortar no meio dele. A janela de preview rola na horizontal
+  (fase 2). O rótulo nunca alarga a caixa: se não couber, é truncado com reticências. Com
+  `ambiwidth=double` a caixa fecha certo (testado).
+- **Tab** vira espaços até o próximo múltiplo de 4 (`code.TABSTOP`), em células, antes de
+  medir e de marcar. O parser recebe o texto original, não o expandido, porque `Makefile` e
+  afins dependem do tab: as colunas das capturas são deslocadas depois.
+- **Highlight** por `vim.treesitter.get_string_parser` + a query `highlights` da linguagem. Cada
+  captura vira uma marca `@captura.lang` (`@keyword.lua`), o grupo que o Neovim e os esquemas
+  de cores já definem, com a queda para `@keyword` quando o esquema não define o da linguagem.
+  Prioridade 100 (a do highlighter do Neovim, ou o `priority` da query), com o fundo do
+  bloco em 50 para uma captura com `bg` vencer. Captura de várias linhas vira uma marca por
+  linha. `_privada`, `@spell`, `@nospell` e `@none` não geram marca.
+- **Resolução da linguagem** (`code.resolve_lang`, só nomes `[%w_]+` chegam ao
+  `language.add`, porque ele procura `parser/<nome>.*` no runtimepath e o info string vem de um
+  documento que ninguém conferiu): `language.get_lang` (o que o usuário registrou com
+  `register`), a tabela `code.ALIASES` (`sh`, `js`, `py`, `ts`, `yml`, `c++`...), a extensão como
+  filetype (`kts` -> `kotlin`) e o nome como veio. `get_lang` sozinho **não** resolve alias:
+  `get_lang("js")` devolve `"js"`, medido no 0.11.5.
+- **Sem injeção.** Só a linguagem do bloco: `parser:parse()` sem argumento não roda as
+  injeções, e `parse(true)` rodaria (HTML com `<script>`, comentário de doc, `vim.cmd` em Lua
+  ficam só na cor da linguagem de fora).
+- **`markdown` e `markdown_inline` não são coloridos.** O scanner do parser de Markdown aborta
+  o Neovim com aninhamento fundo (V6), e `get_string_parser(src, "markdown")` é exatamente a
+  chamada que dispararia isso. A guarda mora em `parse.lua` e conta as linhas dentro da cerca
+  também, então um documento vindo de `parse.lua` com um bloco assim nem chega a este módulo;
+  mas `code.render` aceita bloco sintético, e a segurança não pode depender de quem chama.
+  Dá para ligar de volta exportando a guarda de `parse.lua`.
+- **Tetos.** Acima de `MAX_HIGHLIGHT_LINES` (5000) ou `MAX_HIGHLIGHT_BYTES` (512 KB) o bloco
+  sai sem cor e com moldura. O treesitter de string não tem timeout, e o preview re-renderiza
+  a cada edição.
+- **Cache** do resultado do parse por `parser .. "\0" .. fonte`, em duas gerações (um acerto
+  na antiga promove a entrada), com teto de 256 entradas e 300 mil capturas por geração.
+  Falha não entra no cache: instalar o parser no meio da sessão tem que fazer efeito. Os
+  contadores `code.stats.parses` e `code.stats.hits` são o que os testes leem.
+- **Degradação** (ADR-0004): parser ausente, `language.add` que devolve `nil, err`, `false` ou
+  lança, query ausente ou que lança, parser sem árvore, parse que lança, `root()` que lança,
+  nome de linguagem inválido: o bloco sai com moldura e sem cor, sem erro, sem `vim.notify`
+  e sem derrubar o resto do documento. O motivo fica em `code.last_error`. Cada caso tem teste
+  que o força: o parser de `lua` é escondido por stub (só ele; o Markdown precisa dos seus).
+- **Nota (`block.note`)** é uma linha discreta (`DeckleCodeNote`) logo abaixo da moldura,
+  truncada em `ctx.width`. É para a fase 7: o IR do parser não tem `note`, só quem chama
+  `code.render` com um bloco sintético a preenche. Bloco sem linhas não produz nada, nem a
+  nota.
+- **Grupos novos** em `highlight.lua`: `DeckleCodeBorder` (`Comment`), `DeckleCodeLang`
+  (`Type`) e `DeckleCodeNote` (`Comment`). `DeckleCode` continua o fundo do corpo.
+- **Custo** (Neovim 0.11.0, 0.11.5 e nightly): ver V10 em `docs/validation.md`. Um bloco de 2000
+  linhas de Lua renderiza em ~120 ms a frio e ~10 ms com cache.
+- **Testes.** `tests/test_code.lua` (moldura, nota, highlight, linguagem, degradação, tamanho,
+  cache, e dois casos com o preview de verdade num Neovim filho, um deles lendo o atributo
+  da célula na tela). Os dois testes de fallback de `code` em `tests/test_render.lua` saíram
+  (o comportamento cru não existe mais) e o de lista com código passou a esperar a moldura.
+- **Não foi validado:** só os parsers `lua`, `c` e `vim` (os do core) foram exercitados. Outro
+  parser pode ter o mesmo tipo de `assert` no scanner que o de Markdown tem; os tetos de
+  tamanho limitam o custo, não o aborto. Nada foi visto numa UI de terminal de verdade (o
+  atributo da célula na tela é lido no Neovim filho), nem o efeito de `ambiwidth=double` num
+  terminal real, só o que `strdisplaywidth` mede.
+
 ---
 
 ## Fase 6 — Crate `deckle-native`
