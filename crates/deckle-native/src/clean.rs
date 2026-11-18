@@ -30,6 +30,52 @@
 //! desligue. Filtra-las exigiria reconhecer o formato por regex, que quebra no primeiro
 //! rotulo que o contenha. Ficam como limitacao documentada (`docs/validation.md`, V11).
 
+/// Cor-sentinela do tema do merman. Em TrueColor o merman pinta **todo** elemento com a cor do
+/// papel dele no tema (texto `#27272a`, borda `#a1a1aa`...), e nao so o que o diagrama estiliza.
+/// Essas cores sao de um tema claro e iriam por cima do esquema de cores do usuario. O `render.rs`
+/// monta um tema em que todo papel "de tema" tem esta cor, e [`drop_theme_colors`] tira os
+/// escapes dela: sobra so a cor que o diagrama pediu (`classDef`, `style`, `linkStyle`, `box
+/// rgb`, `rect rgb`) e o que e dado (as series de um xychart).
+pub(crate) const THEME_SENTINEL: (u8, u8, u8) = (1, 2, 3);
+
+/// Tira das linhas os escapes de cor da [`THEME_SENTINEL`] (de frente e de fundo) e os
+/// `ESC[0m` que ficam sem nada para fechar. Escape tem largura zero: a largura nao muda.
+pub(crate) fn drop_theme_colors(lines: Vec<String>) -> Vec<String> {
+    let (r, g, b) = THEME_SENTINEL;
+    let sentinels = [
+        format!("\u{1b}[38;2;{r};{g};{b}m"),
+        format!("\u{1b}[48;2;{r};{g};{b}m"),
+    ];
+    lines
+        .into_iter()
+        .map(|line| {
+            if !line.contains('\u{1b}') {
+                return line;
+            }
+            let mut out = String::with_capacity(line.len());
+            // Ha algum estilo aberto que um reset fecharia?
+            let mut open = false;
+            for tok in tokenize(&line) {
+                match tok {
+                    Tok::Ch(c) => out.push(c),
+                    Tok::Esc(seq) if sentinels.contains(&seq) => {}
+                    Tok::Esc(seq) if seq == "\u{1b}[0m" || seq == "\u{1b}[m" => {
+                        if open {
+                            out.push_str(&seq);
+                            open = false;
+                        }
+                    }
+                    Tok::Esc(seq) => {
+                        open = true;
+                        out.push_str(&seq);
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
 /// As entidades decodificadas. `&amp;` vem decodificado uma vez so: `&amp;lt;` vira `&lt;`.
 const ENTITIES: &[(&str, char)] = &[
     ("&lt;", '<'),
@@ -371,6 +417,38 @@ mod tests {
             let _ = one(odd);
         }
         assert_eq!(one("&lt;"), "<");
+    }
+
+    fn sentinel_fg() -> String {
+        let (r, g, b) = THEME_SENTINEL;
+        format!("\u{1b}[38;2;{r};{g};{b}m")
+    }
+
+    #[test]
+    fn theme_colors_go_away_and_authored_colors_stay() {
+        let s = sentinel_fg();
+        let authored = "\u{1b}[38;2;21;101;192m\u{1b}[48;2;227;242;253m";
+        let line = format!("{s}│\u{1b}[0m {authored}Start\u{1b}[0m {s}─\u{1b}[0m");
+        let out = drop_theme_colors(vec![line]).remove(0);
+        // Sobra so o trecho estilizado, com o reset dele, e o resto e texto puro.
+        assert_eq!(out, format!("│ {authored}Start\u{1b}[0m ─"));
+        assert!(!out.contains("38;2;1;2;3"));
+    }
+
+    #[test]
+    fn theme_color_stripping_never_changes_the_visible_text() {
+        let s = sentinel_fg();
+        let bg = "\u{1b}[48;2;1;2;3m";
+        let line = format!("{s}{bg}┌──┐\u{1b}[0m \u{1b}[1mx\u{1b}[0m");
+        let out = drop_theme_colors(vec![line.clone()]).remove(0);
+        assert_eq!(strip_escapes(&out), strip_escapes(&line));
+        assert_eq!(out, "┌──┐ \u{1b}[1mx\u{1b}[0m");
+    }
+
+    #[test]
+    fn lines_without_escapes_are_untouched_by_the_theme_strip() {
+        let lines = vec!["┌──┐".to_string(), String::new(), "a &lt; b".to_string()];
+        assert_eq!(drop_theme_colors(lines.clone()), lines);
     }
 
     #[test]

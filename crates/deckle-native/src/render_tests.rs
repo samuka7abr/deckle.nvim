@@ -708,6 +708,188 @@ fn numeric_apostrophe_entity_is_a_known_limitation() {
     assert!(ok.contains("it's"), "{ok}");
 }
 
+// --- cor (TrueColor) -----------------------------------------------------------------------
+
+fn color_opts() -> RenderOptions {
+    RenderOptions {
+        color: true,
+        ..opts()
+    }
+}
+
+/// Tira os escapes SGR (`ESC [ ... m`) de uma linha.
+fn strip_sgr(line: &str) -> String {
+    let mut out = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for n in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&n) {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+const STYLED_FLOWCHART: &str = "flowchart LR\n  A[Start] --> B{Ok?}\n  B -->|yes| C[Done]\n  B -->|no| D[Retry]\n  classDef good fill:#e3f2fd,stroke:#1565c0,color:#0d47a1\n  classDef bad fill:#fce4ec,stroke:#c62828\n  class A,C good\n  class D bad\n  style B fill:#fff3e0,stroke:#e65100\n  linkStyle 0 stroke:#ff0000";
+
+const STYLED_SEQUENCE: &str = "sequenceDiagram\n  box rgb(200,220,255) Frontend\n    participant U as User\n    participant W as Web\n  end\n  rect rgb(255,230,200)\n    U->>W: click\n    W-->>U: ok\n  end";
+
+/// As cores do tema claro do merman, que nenhum diagrama pediu e que nao podem sair.
+const THEME_DEFAULTS: &[&str] = &[
+    "39;39;42",    // texto
+    "161;161;170", // borda de no
+    "113;113;122", // linha de aresta
+    "82;82;91",    // seta
+    "124;58;237",  // titulo de secao
+    "29;78;216",   // titulo
+];
+
+#[test]
+fn color_is_off_by_default_and_plain_output_has_no_escapes() {
+    assert!(!RenderOptions::default().color);
+    for (family, src) in MINIMAL.iter().chain([("styled", STYLED_FLOWCHART)].iter()) {
+        let lines = render(src, &opts()).unwrap();
+        assert!(
+            lines.iter().all(|l| !l.contains('\u{1b}')),
+            "{family}: escape no modo Plain"
+        );
+    }
+}
+
+#[test]
+fn a_diagram_without_styling_has_no_color_at_all() {
+    // Sem classDef/style, nada a pintar: o tema do merman nao vaza para o preview.
+    for src in [
+        "flowchart LR\n  A[Start] --> B[End]",
+        "sequenceDiagram\n  Alice->>John: Hello\n  John-->>Alice: Hi",
+        "classDiagram\n  class Animal\n  class Duck\n  Animal <|-- Duck",
+        "stateDiagram-v2\n  [*] --> A\n  A --> [*]",
+        "erDiagram\n  CUSTOMER ||--o{ ORDER : places",
+        "mindmap\n  root((Root))\n    A\n    B",
+    ] {
+        let lines = render(src, &color_opts()).unwrap();
+        let escapes: Vec<&String> = lines.iter().filter(|l| l.contains('\u{1b}')).collect();
+        assert!(escapes.is_empty(), "{src}\n{escapes:?}");
+    }
+}
+
+#[test]
+fn authored_colors_come_out_as_truecolor_and_theme_colors_do_not() {
+    let lines = render(STYLED_FLOWCHART, &color_opts()).unwrap();
+    let raw = lines.join("\n");
+    for authored in [
+        "38;2;21;101;192",  // stroke da classe good
+        "48;2;227;242;253", // fill da classe good
+        "38;2;13;71;161",   // color da classe good
+        "38;2;198;40;40",   // stroke da classe bad
+        "38;2;230;81;0",    // style do no B
+        "38;2;255;0;0",     // linkStyle 0
+    ] {
+        assert!(raw.contains(authored), "faltou {authored}:\n{raw}");
+    }
+    for theme in THEME_DEFAULTS {
+        assert!(!raw.contains(theme), "vazou a cor do tema {theme}:\n{raw}");
+    }
+    assert!(!raw.contains("38;2;1;2;3"), "sobrou a cor-sentinela");
+}
+
+#[test]
+fn box_and_rect_colors_of_a_sequence_diagram_come_out() {
+    let raw = render(STYLED_SEQUENCE, &color_opts()).unwrap().join("\n");
+    assert!(raw.contains("48;2;200;220;255"), "box rgb:\n{raw}");
+    assert!(raw.contains("48;2;255;230;200"), "rect rgb:\n{raw}");
+    for theme in THEME_DEFAULTS {
+        assert!(!raw.contains(theme), "vazou a cor do tema {theme}");
+    }
+}
+
+#[test]
+fn the_text_without_escapes_is_identical_to_the_plain_render() {
+    // O ponto da etapa 4: a cor nao muda o layout nem uma celula. Sem os escapes, a saida e a
+    // do modo Plain, linha por linha, para todos os tipos e para os diagramas reais do ILZA.
+    let mut cases: Vec<(String, String)> = MINIMAL
+        .iter()
+        .map(|(family, src)| ((*family).to_string(), (*src).to_string()))
+        .collect();
+    cases.push(("styled flowchart".into(), STYLED_FLOWCHART.into()));
+    cases.push(("styled sequence".into(), STYLED_SEQUENCE.into()));
+    cases.push(("ilza architecture".into(), ILZA_ARCHITECTURE.into()));
+    cases.push(("ilza modules".into(), ILZA_MODULES.into()));
+    cases.push((
+        "entities".into(),
+        "flowchart LR\n  A[\"a &lt; b\"] --> B[\"x &amp; y\"]\n  classDef c fill:#eee,stroke:#333\n  class A,B c".into(),
+    ));
+    for width in [40, 120] {
+        for (name, src) in &cases {
+            let plain = render_ex(src, &RenderOptions { width, ..opts() })
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            let colored = render_ex(
+                src,
+                &RenderOptions {
+                    width,
+                    ..color_opts()
+                },
+            )
+            .unwrap_or_else(|e| panic!("{name} (cor): {e}"));
+            let stripped: Vec<String> = colored.lines.iter().map(|l| strip_sgr(l)).collect();
+            assert_eq!(stripped, plain.lines, "{name}, largura {width}");
+            assert_eq!(colored.simplified, plain.simplified, "{name}");
+        }
+    }
+}
+
+#[test]
+fn color_render_is_deterministic_and_keeps_the_fallback() {
+    let a = render_ex(ILZA_MODULES, &color_opts()).unwrap();
+    let b = render_ex(ILZA_MODULES, &color_opts()).unwrap();
+    assert_eq!(a, b);
+    assert_eq!(a.simplified, Some(Simplified::Subgraphs));
+    // O ILZA tem classDef: a cor autoral sobrevive ao achatamento.
+    assert!(a.lines.join("\n").contains("38;2;230;81;0"));
+}
+
+#[test]
+fn entities_are_decoded_inside_colored_lines_without_losing_width() {
+    let src = "flowchart LR\n  A[\"a &lt; b\"] --> B[\"3 &lt;&lt; 4\"]\n  classDef c fill:#e3f2fd,stroke:#1565c0,color:#0d47a1\n  class A,B c";
+    let lines = render(src, &color_opts()).unwrap();
+    let plain: Vec<String> = lines.iter().map(|l| strip_sgr(l)).collect();
+    let text = plain.join("\n");
+    assert!(text.contains("a < b") && text.contains("3 << 4"), "{text}");
+    assert!(!text.contains("&lt;"), "{text}");
+    assert_rectangular("entidades com cor", &plain);
+    assert!(lines.join("\n").contains("48;2;227;242;253"));
+}
+
+#[test]
+fn ascii_charset_with_color_only_has_ascii_bytes() {
+    let lines = render(
+        STYLED_FLOWCHART,
+        &RenderOptions {
+            charset: Charset::Ascii,
+            ..color_opts()
+        },
+    )
+    .unwrap();
+    assert!(lines.iter().all(|l| l.is_ascii()), "{lines:?}");
+    assert!(lines.join("\n").contains("38;2;21;101;192"));
+}
+
+#[test]
+fn chart_series_keep_their_data_colors() {
+    let src = "xychart-beta\n  x-axis [a, b, c]\n  y-axis \"Y\" 0 --> 10\n  bar [3, 7, 5]\n  line [2, 6, 4]";
+    let raw = render(src, &color_opts()).unwrap().join("\n");
+    assert!(raw.contains('\u{1b}'), "o xychart nao saiu colorido");
+    for theme in THEME_DEFAULTS {
+        assert!(!raw.contains(theme), "vazou a cor do tema {theme}");
+    }
+}
+
 // --- depuracao: `make dump FILE=x.mmd` -----------------------------------------------------
 
 /// Desenha o arquivo de `DECKLE_DUMP` e imprime o resultado, para olhar a arte. Largura em
@@ -726,15 +908,18 @@ fn dump_file() {
     } else {
         Charset::Unicode
     };
+    let color = std::env::var("DECKLE_DUMP_COLOR").is_ok_and(|v| v == "1");
     let started = Instant::now();
     let opts = RenderOptions {
         width,
         charset,
+        color,
         ..RenderOptions::default()
     };
     match render_ex(&src, &opts) {
         Ok(rendered) => {
-            println!("{}", rendered.lines.join("\n"));
+            // Com cor, os escapes saem como `\e` visivel: o terminal do dump nao os interpreta.
+            println!("{}", rendered.lines.join("\n").replace('\u{1b}', "\\e"));
             println!(
                 "-- ok: {} linhas, {} colunas, simplified={:?}, {:?}",
                 rendered.lines.len(),

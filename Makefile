@@ -47,8 +47,10 @@ check-merman:
 	./scripts/check-merman-version.sh
 
 # Desenha um arquivo .mmd com o mesmo caminho do plugin (fallback incluido) e imprime a arte:
-#   make dump FILE=examples/x.mmd [WIDTH=100] [ASCII=1]
+#   make dump FILE=examples/x.mmd [WIDTH=100] [ASCII=1] [COLOR=1]
+# Com COLOR=1 o desenho vem em TrueColor e os escapes SGR saem escritos como `\e`.
 dump:
-	@test -n "$(FILE)" || { echo "uso: make dump FILE=caminho.mmd [WIDTH=100] [ASCII=1]" >&2; exit 1; }
+	@test -n "$(FILE)" || { echo "uso: make dump FILE=caminho.mmd [WIDTH=100] [ASCII=1] [COLOR=1]" >&2; exit 1; }
 	DECKLE_DUMP="$(abspath $(FILE))" DECKLE_DUMP_WIDTH="$(or $(WIDTH),100)" DECKLE_DUMP_ASCII="$(ASCII)" \
+	  DECKLE_DUMP_COLOR="$(COLOR)" \
 	  $(CARGO) test -q -p deckle-native -- --ignored --nocapture dump_file
