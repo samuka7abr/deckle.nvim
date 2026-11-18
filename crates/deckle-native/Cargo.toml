@@ -12,9 +12,12 @@ name = "deckle_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-# Versao EXATA e IDENTICA nos dois crates. Alpha que quebra API entre versoes, e `cargo add`
+# Versao EXATA e IDENTICA nos dois crates. O merman quebra API entre versoes, e `cargo add`
 # ja resolveu versoes diferentes para os dois (V5). Ao subir, mude os dois, o ADR-0002, o
-# CLAUDE.md e `MERMAN_VERSION` em scripts/check-merman-version.sh.
-merman-core = "=0.8.0-alpha.6"
-merman-ascii = "=0.8.0-alpha.6"
+# CLAUDE.md e `PINNED` em scripts/check-merman-version.sh.
+#
+# `all-diagrams` e obrigatorio nos dois: sem ele o merman 0.8.0 nao compila os parsers e o
+# flowchart some (ADR-0002, secao "merman 0.8.0").
+merman-core = { version = "=0.8.0", features = ["all-diagrams"] }
+merman-ascii = { version = "=0.8.0", features = ["all-diagrams"] }
 mlua = { version = "0.11", features = ["module", "luajit"] }

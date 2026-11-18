@@ -10,7 +10,7 @@
 # ADR-0002 e o CLAUDE.md. Os quatro lugares precisam andar juntos.
 set -euo pipefail
 
-PINNED="0.8.0-alpha.6"
+PINNED="0.8.0"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 cd "${script_dir}/.."
@@ -26,6 +26,9 @@ for crate in merman-core merman-ascii; do
   [[ -n "${declared}" ]] || fail "${crate} nao esta declarado em crates/deckle-native/Cargo.toml"
   [[ "${declared}" == *"\"=${PINNED}\""* ]] \
     || fail "${crate} deveria estar pinado em \"=${PINNED}\" no Cargo.toml, achei: ${declared}"
+  # Sem `all-diagrams` o merman 0.8.0 nao compila os parsers: o flowchart some em silencio.
+  [[ "${declared}" == *"\"all-diagrams\""* ]] \
+    || fail "${crate} precisa de features = [\"all-diagrams\"] no Cargo.toml, achei: ${declared}"
 done
 
 # 2. O que o cargo resolveu. `--prefix none` imprime `nome vVERSAO` por linha.
