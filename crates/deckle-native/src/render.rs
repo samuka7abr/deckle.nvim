@@ -21,8 +21,9 @@ use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use merman_ascii::{
-    AsciiError, AsciiLayoutProfile, AsciiOutput, AsciiRenderOptions, AsciiRenderer,
-    AsciiResourceLimitId, AsciiResourcePolicy, AsciiViewportPolicy, OverflowPolicy,
+    AsciiColorMode, AsciiColorRole, AsciiColorTheme, AsciiError, AsciiLayoutProfile, AsciiOutput,
+    AsciiRenderOptions, AsciiRenderer, AsciiResourceLimitId, AsciiResourcePolicy, AsciiRgb,
+    AsciiViewportPolicy, OverflowPolicy,
 };
 use merman_core::{ParseOptions, SemanticParser};
 use merman_model::families::flowchart::{FlowEdgeStroke, FlowNodeProvenance, FlowchartModel};
@@ -71,6 +72,11 @@ pub struct RenderOptions {
     /// Id de tipo do Mermaid ja conhecido (por exemplo `flowchart-v2`), que pula a deteccao.
     pub diagram_ty: Option<String>,
     pub max_src_lines: usize,
+    /// Desenha em TrueColor: as linhas voltam com escapes SGR (`ESC[38;2;r;g;bm`...) onde o
+    /// diagrama pede cor (`classDef`, `style`, `linkStyle`, `box rgb`, `rect rgb`). `false` e a
+    /// saida de sempre, texto puro. Quem decide se liga e o chamador (o `render/mermaid.lua`
+    /// nao liga com `charset = "ascii"`). Ver `clean.rs` para o que e tirado do TrueColor.
+    pub color: bool,
 }
 
 impl Default for RenderOptions {
@@ -80,6 +86,7 @@ impl Default for RenderOptions {
             charset: Charset::Unicode,
             diagram_ty: None,
             max_src_lines: DEFAULT_MAX_SRC_LINES,
+            color: false,
         }
     }
 }
@@ -188,7 +195,7 @@ fn render_inner(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError
     let context = operation_context()?;
 
     let err = match draw(&parsed, opts, &context) {
-        Ok(output) => return finish(output, None),
+        Ok(output) => return finish(output, None, opts),
         Err(err) => err,
     };
 
@@ -200,7 +207,7 @@ fn render_inner(src: &str, opts: &RenderOptions) -> Result<Rendered, RenderError
     ) {
         for step in applicable_steps(&parsed) {
             if let Some(output) = draw_simplified(src, opts, &context, step) {
-                return finish(output, Some(step.notice()));
+                return finish(output, Some(step.notice()), opts);
             }
         }
     }
@@ -262,8 +269,21 @@ fn draw(
     Ok(output)
 }
 
-fn finish(output: AsciiOutput, notice: Option<String>) -> Result<Rendered, RenderError> {
+fn finish(
+    output: AsciiOutput,
+    notice: Option<String>,
+    opts: &RenderOptions,
+) -> Result<Rendered, RenderError> {
+    // Duas limpezas das linhas ja desenhadas, sem mexer na largura (`clean.rs`): o merman pinta
+    // tudo com as cores do tema dele em TrueColor (ficam so as que o diagrama pediu), e deixa
+    // `&lt;`, `&gt;` e `&amp;` literais em flowchart e state (V11).
     let lines: Vec<String> = output.text.lines().map(str::to_owned).collect();
+    let lines = if opts.color {
+        crate::clean::extend_node_backgrounds(crate::clean::drop_theme_colors(lines))
+    } else {
+        lines
+    };
+    let lines = crate::clean::decode_entities(lines);
     // Diagrama so com cabecalho e valido para o parser mas nao desenha nada. Devolver zero
     // linhas faria o bloco sumir do preview sem explicacao, entao vira erro e o chamador
     // degrada para codigo cru.
@@ -400,12 +420,49 @@ fn render_model(
         Charset::Unicode => AsciiRenderOptions::unicode(),
         Charset::Ascii => AsciiRenderOptions::ascii(),
     }
-    .with_layout_profile(profile);
+    .with_layout_profile(profile)
+    .with_color_mode(if opts.color {
+        AsciiColorMode::TrueColor
+    } else {
+        AsciiColorMode::Plain
+    })
+    .with_color_theme(color_theme());
     let renderer = AsciiRenderer::new(ascii_opts)?;
     let control = OperationControl::new();
     let viewport = AsciiViewportPolicy::with_max_width(opts.width).overflow(OverflowPolicy::Allow);
 
     renderer.render_parsed_report(parsed, viewport, &control, context, resource_policy())
+}
+
+/// O tema do merman com a cor-sentinela em todo papel que e "de tema" (texto, bordas, arestas,
+/// titulos...): o `clean::drop_theme_colors` as tira, e sobra so a cor que o diagrama pediu.
+/// Ficam com a cor do tema os papeis que sao dado e nao moldura: as series do xychart e a barra
+/// de ativacao do sequence.
+fn color_theme() -> AsciiColorTheme {
+    let (r, g, b) = crate::clean::THEME_SENTINEL;
+    let sentinel = AsciiRgb::new(r, g, b);
+    [
+        AsciiColorRole::Surface,
+        AsciiColorRole::Text,
+        AsciiColorRole::MutedText,
+        AsciiColorRole::Title,
+        AsciiColorRole::Section,
+        AsciiColorRole::Diagnostic,
+        AsciiColorRole::StatusEmphasis,
+        AsciiColorRole::NodeBorder,
+        AsciiColorRole::GroupBorder,
+        AsciiColorRole::EdgeLine,
+        AsciiColorRole::EdgeArrow,
+        AsciiColorRole::EdgeLabel,
+        AsciiColorRole::Junction,
+        AsciiColorRole::SequenceLifeline,
+        AsciiColorRole::SequenceFrame,
+        AsciiColorRole::ChartAxis,
+    ]
+    .into_iter()
+    .fold(AsciiColorTheme::default_light(), |theme, role| {
+        theme.with_role(role, sentinel)
+    })
 }
 
 /// O perfil `interactive` do merman com o teto de trabalho de layout em

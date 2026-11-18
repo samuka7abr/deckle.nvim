@@ -108,6 +108,18 @@ fn parse_opts(table: &LuaTable) -> Result<RenderOptions, RenderError> {
         opts.charset = Charset::parse(&charset)?;
     }
     opts.diagram_ty = get::<String>(table, "diagram_ty")?;
+    // `bool::from_lua` do mlua aceita qualquer valor (truthiness): `color = "yes"` ligaria a
+    // cor em silencio. Aqui so um booleano de verdade vale.
+    match get::<LuaValue>(table, "color")? {
+        None | Some(LuaValue::Nil) => {}
+        Some(LuaValue::Boolean(color)) => opts.color = color,
+        Some(other) => {
+            return Err(RenderError::InvalidOption(format!(
+                "opts.color must be a boolean, got {}",
+                other.type_name()
+            )))
+        }
+    }
     Ok(opts)
 }
 
