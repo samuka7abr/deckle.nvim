@@ -49,6 +49,7 @@ local ENTRY = "luaopen_deckle_native"
 
 ---@class deckle.NativeModule
 ---@field render fun(src: string, opts?: table): string[]
+---@field render_ex fun(src: string, opts?: table): { lines: string[], simplified: string|nil, cause: string|nil }|nil  ausente nos módulos mais antigos
 ---@field supported_types fun(): string[]
 ---@field version fun(): string
 

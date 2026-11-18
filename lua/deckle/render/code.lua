@@ -184,6 +184,16 @@ local function truncate(s, max, ellipsis)
   return table.concat(out) .. keep
 end
 
+--- Corta `s` em `max` células, com as reticências do `charset` (`"unicode"` ou `"ascii"`). Para
+--- quem desenha uma nota fora do bloco de código, como o aviso de simplificação do Mermaid.
+---@param s string
+---@param max integer
+---@param charset string
+---@return string
+function M.truncate(s, max, charset)
+  return truncate(s, max, (GLYPHS[charset] or GLYPHS.ascii).ellipsis)
+end
+
 --- Troca os tabs de `line` por espaços, até o próximo múltiplo de `TABSTOP` (em células, não
 --- em bytes).
 ---

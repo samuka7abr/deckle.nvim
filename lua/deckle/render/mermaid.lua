@@ -21,6 +21,16 @@
 --- reticências, e quem não desenha nada para um bloco sem linhas: um `mermaid` vazio some do
 --- preview, como qualquer cerca vazia. O motivo completo, sem corte, fica em `M.last_error`.
 ---
+--- # Desenho simplificado
+---
+--- Há uma falha que **não** degrada o bloco: o `merman` não roteia as arestas que cruzam a borda
+--- de um `subgraph` (e de certos estados compostos), e o crate então desenha o diagrama sem as
+--- caixas deles (o fallback de achatamento, `docs/validation.md` V11). O bloco continua sendo
+--- arte, e uma nota discreta (`DeckleCodeNote`) logo abaixo dela avisa que o desenho não é
+--- fiel: `mermaid: layout simplified (subgraphs flattened)`. O que o crate achatou vem do
+--- `render_ex` do módulo nativo; um módulo mais antigo, que só tem `render`, nunca simplifica.
+--- O motivo (a mensagem do merman) fica em `M.last_simplified`.
+---
 --- # Linha mais larga que a janela
 ---
 --- O `width` do `ctx` vai ao crate como **meta**: o merman tenta o perfil compacto quando o
@@ -55,6 +65,11 @@ M.cache_limit = 64
 ---@type string|nil
 M.last_error = nil
 
+--- Mensagem do merman que motivou o desenho simplificado mais recente, ou `nil` se o último
+--- desenho veio inteiro. Para teste e depuração.
+---@type string|nil
+M.last_simplified = nil
+
 --- A moldura já tem `mermaid` no rótulo, então a nota é curta: quando o bloco é estreito ela
 --- perde o fim, não o começo.
 local NOTE_PREFIX = "mermaid: "
@@ -63,8 +78,13 @@ local NOTE_PREFIX = "mermaid: "
 -- Cache
 -- ---------------------------------------------------------------------------------------
 
+---@class deckle.MermaidDrawing
+---@field lines string[]
+---@field simplified string|nil  o que o crate achatou (`"subgraphs"`), ou `nil` se o desenho é fiel
+---@field cause string|nil       a mensagem do merman que motivou a simplificação
+
 ---@class deckle.MermaidCacheEntry
----@field lines string[]|nil  o desenho, quando o render deu certo
+---@field drawing deckle.MermaidDrawing|nil  o desenho, quando o render deu certo
 ---@field err string|nil      a mensagem do crate, quando deu erro
 ---@field tick integer        ordem de uso, para o LRU
 
@@ -134,28 +154,50 @@ local function copy(lines)
   return vim.list_slice(lines, 1, #lines)
 end
 
---- Chama o crate. Devolve as linhas, ou `nil` e a mensagem do erro.
+--- Chama o crate. Devolve o desenho, ou `nil` e a mensagem do erro.
+---
+--- Usa `render_ex` (`{ lines, simplified?, cause? }`) quando o módulo a tem, e `render` (só as
+--- linhas) quando não: um módulo de antes do fallback de achatamento nunca simplifica.
 ---@param mod deckle.NativeModule
 ---@param src string
 ---@param opts table
----@return string[]|nil lines
+---@return deckle.MermaidDrawing|nil drawing
 ---@return string|nil err
 local function call_native(mod, src, opts)
-  local ok, result = pcall(mod.render, src, opts)
+  local ok, result = pcall(mod.render_ex or mod.render, src, opts)
   if not ok then
     return nil, vim.trim((tostring(result):gsub("%s+", " ")))
   end
-  if type(result) ~= "table" or type(result[1]) ~= "string" then
+  local lines, simplified, cause = result, nil, nil
+  if type(result) == "table" and result.lines ~= nil then
+    lines, simplified, cause = result.lines, result.simplified, result.cause
+  end
+  if type(lines) ~= "table" or type(lines[1]) ~= "string" then
     return nil, "the native renderer returned no lines"
   end
-  return result
+  return {
+    lines = lines,
+    simplified = type(simplified) == "string" and simplified or nil,
+    cause = type(cause) == "string" and cause or nil,
+  }
 end
 
---- Desenha o bloco: linhas de arte, ou `nil` e o motivo (curto para a nota, completo para
+--- Cópia do desenho para entregar ao chamador: o cache guarda o original.
+---@param drawing deckle.MermaidDrawing
+---@return deckle.MermaidDrawing
+local function copy_drawing(drawing)
+  return {
+    lines = copy(drawing.lines),
+    simplified = drawing.simplified,
+    cause = drawing.cause,
+  }
+end
+
+--- Desenha o bloco: o desenho, ou `nil` e o motivo (curto para a nota, completo para
 --- `last_error`).
 ---@param block deckle.Block
 ---@param ctx deckle.RenderCtx
----@return string[]|nil lines
+---@return deckle.MermaidDrawing|nil drawing
 ---@return string|nil short
 ---@return string|nil detail
 local function draw(block, ctx)
@@ -186,22 +228,22 @@ local function draw(block, ctx)
     local entry = recall(key)
     if entry then
       hits = hits + 1
-      if entry.lines then
-        return copy(entry.lines)
+      if entry.drawing then
+        return copy_drawing(entry.drawing)
       end
       return nil, entry.err
     end
     misses = misses + 1
   end
 
-  local lines, err = call_native(mod, src, opts)
+  local drawing, err = call_native(mod, src, opts)
   if key then
-    remember(key, { lines = lines, err = err })
+    remember(key, { drawing = drawing, err = err })
   end
-  if not lines then
+  if not drawing then
     return nil, err
   end
-  return copy(lines)
+  return copy_drawing(drawing)
 end
 
 -- ---------------------------------------------------------------------------------------
@@ -243,17 +285,28 @@ end
 ---@param ctx deckle.RenderCtx
 ---@return string[] lines, deckle.Mark[] marks
 function M.render(block, ctx)
-  local ok, lines, short, detail = pcall(draw, block, ctx)
+  local ok, drawing, short, detail = pcall(draw, block, ctx)
   if not ok then
-    lines, short, detail = nil, "internal error", tostring(lines)
+    drawing, short, detail = nil, "internal error", tostring(drawing)
   end
 
-  if lines then
-    local marks = {}
+  if drawing then
+    local lines, marks = drawing.lines, {}
     for row, line in ipairs(lines) do
       if line:find("%S") then
         marks[#marks + 1] = { row = row - 1, col = 0, end_col = #line, hl = "DeckleMermaid" }
       end
+    end
+    M.last_simplified = drawing.cause
+    if drawing.simplified then
+      -- O desenho é arte, mas não é fiel: a nota diz isso, na largura do bloco.
+      local note = require("deckle.render.code").truncate(
+        ("%slayout simplified (%s flattened)"):format(NOTE_PREFIX, drawing.simplified),
+        ctx.width,
+        ctx.charset
+      )
+      lines[#lines + 1] = note
+      marks[#marks + 1] = { row = #lines - 1, col = 0, end_col = #note, hl = "DeckleCodeNote" }
     end
     return lines, marks
   end

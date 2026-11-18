@@ -156,6 +156,7 @@ local UNIT_HOOKS = {
     fake.responder = default_responder
     mermaid.cache_clear()
     mermaid.last_error = nil
+    mermaid.last_simplified = nil
     use_stub()
   end,
   post_case = function()
@@ -675,6 +676,127 @@ T["nota"]["o render de código lançando erro cai no aviso do dispatcher, só pa
     local result = r("antes\n\n```mermaid\nINVALID\n```\n\ndepois")
     eq(result.lines, { "antes", "", "[deckle: could not render code block]", "", "depois" })
   end)
+end
+
+-- ---------------------------------------------------------------------------------------
+-- Desenho simplificado: o `render_ex` do crate diz que achatou os subgraphs
+-- ---------------------------------------------------------------------------------------
+
+T["simplificado"] = unit_set()
+
+local SIMPLIFIED_NOTE = "mermaid: layout simplified (subgraphs flattened)"
+
+--- Instala um `render_ex` falso no crate falso. `answer` recebe `(src, opts)` e devolve a tabela
+--- do contrato (`{ lines, simplified?, cause? }`).
+---@param answer fun(src: string, opts: table): table
+---@return { n: integer }
+local function use_render_ex(answer)
+  local counter = { n = 0 }
+  package.loaded.deckle_native.render_ex = function(src, opts)
+    counter.n = counter.n + 1
+    return answer(src, opts)
+  end
+  return counter
+end
+
+local ROUTING = "unsupported diagram: routes crossing reserved graph geometry"
+
+T["simplificado"]["a nota discreta vem logo abaixo do desenho, que continua sendo arte"] = function()
+  use_render_ex(function()
+    return { lines = ART, simplified = "subgraphs", cause = ROUTING }
+  end)
+  local result = r(FENCE, { width = 80 })
+  eq(result.lines, { ART[1], ART[2], ART[3], SIMPLIFIED_NOTE })
+  -- Uma marca de diagrama por linha de arte, e a nota é `DeckleCodeNote`, na linha dela.
+  eq(marks_of(result, "DeckleMermaid"), 3)
+  local notes = {}
+  for _, mark in ipairs(result.marks) do
+    if mark.hl == "DeckleCodeNote" then
+      notes[#notes + 1] = mark
+    end
+  end
+  eq(notes, { { row = 3, col = 0, end_col = #SIMPLIFIED_NOTE, hl = "DeckleCodeNote" } })
+  -- Não é degradação: `last_error` não muda, e o motivo fica em `last_simplified`.
+  eq(mermaid.last_error, nil)
+  eq(mermaid.last_simplified, ROUTING)
+end
+
+T["simplificado"]["estado composto também avisa, com o que foi achatado"] = function()
+  use_render_ex(function()
+    return { lines = ART, simplified = "composite states", cause = ROUTING }
+  end)
+  local result = r(FENCE, { width = 80 })
+  eq(result.lines[4], "mermaid: layout simplified (composite states flattened)")
+end
+
+T["simplificado"]["desenho fiel não ganha nota e zera last_simplified"] = function()
+  use_render_ex(function()
+    return { lines = ART }
+  end)
+  mermaid.last_simplified = "velho"
+  local result = r(FENCE, { width = 80 })
+  eq(result.lines, ART)
+  eq(count_in(result.lines, "mermaid: "), 0)
+  eq(mermaid.last_simplified, nil)
+end
+
+T["simplificado"]["o render_ex tem preferência, e o render antigo continua valendo sem ele"] = function()
+  local ex = use_render_ex(function()
+    return { lines = ART }
+  end)
+  r(FENCE)
+  eq(ex.n, 1)
+  eq(#calls, 0)
+
+  -- Um módulo de antes do fallback só tem `render`: nunca simplifica, e nada quebra.
+  package.loaded.deckle_native.render_ex = nil
+  mermaid.cache_clear()
+  local result = r(FENCE)
+  eq(result.lines, ART)
+  eq(#calls, 1)
+end
+
+T["simplificado"]["a simplificação vai para o cache junto com o desenho"] = function()
+  local ex = use_render_ex(function()
+    return { lines = ART, simplified = "subgraphs", cause = ROUTING }
+  end)
+  local first = r(FENCE, { width = 80 })
+  local second = r(FENCE, { width = 80 })
+  eq(ex.n, 1)
+  eq(mermaid.cache_stats().hits, 1)
+  eq(second.lines, first.lines)
+  eq(second.lines[4], SIMPLIFIED_NOTE)
+  eq(mermaid.last_simplified, ROUTING)
+end
+
+T["simplificado"]["a nota cabe na largura: reticências em Unicode, três pontos em ASCII"] = function()
+  use_render_ex(function()
+    return { lines = ART, simplified = "subgraphs" }
+  end)
+  local unicode = r(FENCE, { width = 24 }).lines[4]
+  eq(vim.fn.strdisplaywidth(unicode) <= 24, true)
+  eq(unicode:sub(-3), "…")
+
+  mermaid.cache_clear()
+  local ascii = r(FENCE, { width = 24, charset = "ascii" }).lines[4]
+  eq(vim.fn.strdisplaywidth(ascii) <= 24, true)
+  eq(ascii:sub(-3), "...")
+  eq(ascii:find("[\128-\255]"), nil)
+end
+
+T["simplificado"]["campo simplified que não é string é ignorado, e erro do render_ex degrada"] = function()
+  use_render_ex(function()
+    return { lines = ART, simplified = true }
+  end)
+  eq(r(FENCE).lines, ART)
+
+  mermaid.cache_clear()
+  use_render_ex(function()
+    error("mermaid parse error: boom", 0)
+  end)
+  local result = r(FENCE, { width = 80 })
+  eq(result.lines[#result.lines], "mermaid: parse error: boom")
+  eq(mermaid.last_error, "mermaid parse error: boom")
 end
 
 -- ---------------------------------------------------------------------------------------
